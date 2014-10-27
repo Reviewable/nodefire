@@ -23,7 +23,7 @@
   "homepage": "https://github.com/pkaminski/nodefire",
   "dependencies": {
     "es6-promise": "^2.0.0",
-    "firebase": "^1.1.2",
+    "firebase": "1.1.x",
     "firebase-token-generator": "^2.0.0",
     "lru-cache": "^2.5.0",
     "underscore": "^1.7.0"
