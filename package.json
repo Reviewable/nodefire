@@ -1,0 +1,31 @@
+{
+  "name": "nodefire",
+  "version": "0.1.0",
+  "description": "A promise-centric Firebase library for NodeJS",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/pkaminski/nodefire.git"
+  },
+  "keywords": [
+    "Firebase",
+    "api",
+    "promise"
+  ],
+  "author": "Piotr Kaminski <piotr@ideanest.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/pkaminski/nodefire/issues"
+  },
+  "homepage": "https://github.com/pkaminski/nodefire",
+  "dependencies": {
+    "es6-promise": "^2.0.0",
+    "firebase": "^1.1.2",
+    "firebase-token-generator": "^2.0.0",
+    "lru-cache": "^2.5.0",
+    "underscore": "^1.7.0"
+  }
+}

@@ -1,40 +1,15 @@
-NodeFire
-========
+'use strict';
 
-NodeFire is a Firebase library for NodeJS that has a pretty similar API but adds the following features:
-1. Most methods return a promise, instead of requiring a callback.  This works especially nicely with Node's `--harmony` flag and a framework like `co`, allowing you to control data flow with `yield` statements.
-2. Any paths passed in are treated as templates and interpolated within an implicit or explicit scope, avoiding manual (and error-prone) string concatenation.  Characters forbidden by Firebase are automatically escaped.
-3. Since one-time fetches of a reference are common in server code, a new `get` method makes them easy and an optional LRU cache keeps the most used ones pinned and synced to reduce latency.
-4. Transactions prefetch the current value of the reference to avoid having every transaction re-executed at least twice.
-5. In debug mode, traces are printed for failed security rule checks (and only failed ones).
+require('es6-promise').polyfill();
+var Firebase = require('firebase');
+var FirebaseTokenGenerator = require('firebase-token-generator');
+var _ = require('underscore');
+var url = require('url');
+var LRUCache = require('lru-cache');
 
-## Example
+var cache;
+var serverTimeOffsets = {};
 
-```javascript
-var co = require('co');
-var NodeFire = require('nodefire');
-NodeFire.setCacheSize(10);
-NodeFire.DEBUG = true;
-var db = new NodeFire('https://example.firebaseio.com/');
-co((function*() {
-  yield db.auth('secret', {uid: 'server01'});
-  var stuff = db.child('stuffs', {foo: 'bar', baz: {qux: 42}});
-  var data = yield {
-    theFoo: stuff.child('foos/:foo').get(),
-    theUser: stuff.root().child('users/{baz.qux}').get()
-  };
-  yield [
-    stuff.child('bars/:foo/{theUser.username}', data).set(data.theFoo.bar),
-    stuff.child('counters/:foo').transaction(function(value) {return value + 1;})
-  ];
-})());
-```
-
-## API
-
-This is reproduced from the source code, which is authoritative.
-
-```javascript
 /**
  * A wrapper around a Firebase reference, and the main entry point to the module.  You can pretty
  * much use this class as you would use the Firebase class.  The two major differences are:
@@ -47,7 +22,20 @@ This is reproduced from the source code, which is authoritative.
  * @param {Object} scope Optional dictionary that will be used for interpolating paths.
  * @param {string} host For internal use only, do not pass.
  */
-module.exports = function NodeFire(refOrUrl, scope, host);
+var NodeFire = function(refOrUrl, scope, host) {
+  if (_.isString(refOrUrl)) refOrUrl = new Firebase(refOrUrl);
+  this.$firebase = refOrUrl;
+  this.$scope = scope || {};
+  if (!host) host = url.parse(refOrUrl.toString()).host;
+  this.$host = host;
+  if (!(host in serverTimeOffsets)) {
+    serverTimeOffsets[host] = 0;
+    new Firebase('https://' + host + '/.info/serverTimeOffset').on('value', function(snap) {
+      serverTimeOffsets[host] = snap.val();
+    });
+  }
+};
+module.exports = NodeFire;
 
 /**
  * Flag that indicates whether to run in debug mode.  Currently only has an effect on calls to
@@ -66,13 +54,28 @@ NodeFire.prototype.ServerValue = Firebase.ServerValue;
  * unless you set a non-zero maximum.
  * @param {number} max The maximum number of values to keep pinned in the cache.
  */
-NodeFire.setCacheSize = function(max);
+NodeFire.setCacheSize = function(max) {
+  if (max) {
+    if (!cache) {
+      cache = new LRUCache({max: max, dispose: function(key, ref) {
+        ref.off('value', _.identity);
+      }});
+    } else {
+      cache.max = max;
+    }
+  } else {
+    if (cache) cache.reset();
+    cache = null;
+  }
+};
 
 /**
  * Gets the current number of values pinned in the cache.
  * @return {number} The current size of the cache.
  */
-NodeFire.getCacheCount = function();
+NodeFire.getCacheCount = function() {
+  return cache ? cache.itemCount : 0;
+};
 
 /**
  * Interpolates variables into a template string based on the object's scope (passed into the
@@ -86,7 +89,27 @@ NodeFire.getCacheCount = function();
  *     This scope takes precedence if a key is present in both.
  * @return {string} The interpolated string
  */
-NodeFire.prototype.interpolate = function(string, scope);
+NodeFire.prototype.interpolate = function(string, scope) {
+  scope = scope ? _.extend(_.clone(this.$scope), scope) : this.$scope;
+  string = string.replace(/:([a-z-_]+)|\{(.+?)\}/gi, function(match, v1, v2) {
+    var v = (v1 || v2);
+    var parts = v.split('.');
+    var value = scope;
+    for (var i = 0; i < parts.length; i++) {
+      value = value[parts[i]];
+      if (_.isUndefined(value) || value === null) {
+        throw new Error(
+          'Missing or null variable "' + v + '" when expanding NodeFire path "' + string + '"');
+      }
+    }
+    return value.toString().replace(/[\\\.\$\#\[\]\/]/g, function(char) {
+      return '\\' + char.charCodeAt(0).toString(16);
+    });
+  });
+  return string;
+};
+
+// TODO: add onDisconnect
 
 /**
  * Authenticates with Firebase, using either a secret or a custom token.  To enable security rule
@@ -100,13 +123,37 @@ NodeFire.prototype.interpolate = function(string, scope);
  * @return {Promise} A promise that is resolved when the authentication has completed successfully,
  *     and rejected with an error if it failed.
  */
-NodeFire.prototype.auth = function(secret, authObject);
+NodeFire.prototype.auth = function(secret, authObject) {
+  var token = secret;
+  if (authObject) {
+    // Tokens expire 10 years from now.
+    token = new FirebaseTokenGenerator(secret).createToken(
+      authObject, {expires: this.now() + 315360000, debug: NodeFire.DEBUG});
+    if (NodeFire.DEBUG) interceptFirebaseDebugLogs();
+  }
+  return new Promise(_.bind(function(resolve, reject) {
+    this.$firebase.authWithCustomToken(token, function(error, value) {
+      if (error) reject(error); else resolve(value);
+    });
+  }, this));
+};
 
 /**
  * Unauthenticates from Firebase.
  * @return {Promise} A resolved promise (for consistency, since unauthentication is immediate).
  */
-NodeFire.prototype.unauth = function();
+NodeFire.prototype.unauth = function() {
+  this.$firebase.unauth();
+  return Promise.resolved(null);
+};
+
+/**
+ * Stringifies the wrapped reference.
+ * @return {string} The Firebase URL wrapped by this NodeFire object.
+ */
+NodeFire.prototype.toString = function() {
+  return decodeURIComponent(this.$firebase.toString());
+};
 
 /**
  * Creates a new NodeFire object on the same reference, but with an extended interpolation scope.
@@ -114,7 +161,9 @@ NodeFire.prototype.unauth = function();
  *     precedence over) the one carried by this NodeFire object.
  * @return {NodeFire} A new NodeFire object with the same reference and new scope.
  */
-NodeFire.prototype.scope = function(scope);
+NodeFire.prototype.scope = function(scope) {
+  return new NodeFire(this.$firebase, _.extend(_.clone(this.$scope), scope), this.$host);
+};
 
 /**
  * Creates a new NodeFire object on a child of this one, and optionally an augmented scope.
@@ -125,7 +174,10 @@ NodeFire.prototype.scope = function(scope);
  *     scope.
  * @return {NodeFire} A new NodeFire object on the child reference, and with the augmented scope.
  */
-NodeFire.prototype.child = function(path, scope);
+NodeFire.prototype.child = function(path, scope) {
+  var child = this.scope(scope);
+  return new NodeFire(this.$firebase.child(child.interpolate(path)), child.$scope, this.$host);
+};
 
 /**
  * Gets this reference's current value from Firebase, and inserts it into the cache if a
@@ -134,7 +186,19 @@ NodeFire.prototype.child = function(path, scope);
  *     The value returned is normalized: arrays are converted to objects, and the value's priority
  *     (if any) is set on a ".priority" attribute if the value is an object.
  */
-NodeFire.prototype.get = function();
+NodeFire.prototype.get = function() {
+  var self = this;
+  var url = this.toString();
+  if (cache && !cache.has(url)) {
+    cache.set(url, this);
+    this.on('value', _.identity);
+  }
+  return new Promise(function(resolve, reject) {
+    self.$firebase.once('value', function(snap) {
+      resolve(getNormalValue(snap));
+    }, reject);
+  });
+};
 
 /**
  * Sets the value at this reference.  To set the priority, include a ".priority" attribute on the
@@ -143,7 +207,14 @@ NodeFire.prototype.get = function();
  * @returns {Promise} A promise that is resolved when the value has been set, or rejected with an
  *     error.
  */
-NodeFire.prototype.set = function(value);
+NodeFire.prototype.set = function(value) {
+  var self = this;
+  return new Promise(function(resolve, reject) {
+    self.$firebase.set(value, function(error) {
+      if (error) reject(error); else resolve();
+    });
+  });
+};
 
 /**
  * Updates a value at this reference, setting only the top-level keys supplied and leaving any other
@@ -152,14 +223,28 @@ NodeFire.prototype.set = function(value);
  * @return {Promise} A promise that is resolved when the value has been updated, or rejected with an
  *     error.
  */
-NodeFire.prototype.update = function(value);
+NodeFire.prototype.update = function(value) {
+  var self = this;
+  return new Promise(function(resolve, reject) {
+    self.$firebase.update(value, function(error) {
+      if (error) reject(error); else resolve();
+    });
+  });
+};
 
 /**
  * Removes this reference from the Firebase.
  * @return {Promise} A promise that is resolved when the value has been removed, or rejected with an
  *     error.
  */
-NodeFire.prototype.remove = function();
+NodeFire.prototype.remove = function() {
+  var self = this;
+  return new Promise(function(resolve, reject) {
+    self.$firebase.remove(function(error) {
+      if (error) reject(error); else resolve();
+    });
+  });
+};
 
 /**
  * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
@@ -168,7 +253,14 @@ NodeFire.prototype.remove = function();
  * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
  *     pushed value (with the same scope as this object), or rejected with an error.
  */
-NodeFire.prototype.push = function(value);
+NodeFire.prototype.push = function(value) {
+  var self = this;
+  return new Promise(function(resolve, reject) {
+    var ref = self.$firebase.push(value, function(error) {
+      if (error) reject(error); else resolve(new NodeFire(ref, self.$scope, self.$host));
+    });
+  });
+};
 
 /**
  * Runs a transaction at this reference.
@@ -181,36 +273,109 @@ NodeFire.prototype.push = function(value);
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */
-NodeFire.prototype.transaction = function(updateFunction, applyLocally);
+NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
+  var self = this;
+  applyLocally = applyLocally || false;
+  return new Promise(function(resolve, reject) {
+    var txn = _.once(function() {
+      try {
+        self.$firebase.transaction(updateFunction, function(error, committed, snap) {
+          self.$firebase.off('value', txn);
+          if (error) {
+            reject(error);
+          } else if (committed) {
+            resolve(getNormalValue(snap));
+          } else {
+            resolve();
+          }
+        }, applyLocally);
+      } catch(e) {
+        reject(e);
+      }
+    });
+    // Prefetch the data and keep it "live" during the transaction, to avoid running the
+    // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
+    // from the server.
+    self.$firebase.on('value', txn);
+  });
+};
 
 /**
  * Generates a unique string that can be used as a key in Firebase.
  * @return {string} A unique string that satisfies Firebase's key syntax constraints.
  */
-NodeFire.prototype.generateUniqueKey = function();
+NodeFire.prototype.generateUniqueKey = function() {
+  return this.$firebase.push().name();
+};
 
 /**
  * Returns the current timestamp after adjusting for the Firebase-computed server time offset.
  * @return {number} The current time in integer milliseconds since the epoch.
  */
-NodeFire.prototype.now = function();
+NodeFire.prototype.now = function() {
+  return new Date().getTime() + serverTimeOffsets[this.$host];
+};
+
+function delegate(method) {
+  NodeFire.prototype[method] = function() {
+    return this.$firebase[method].apply(this.$firebase, arguments);
+  };
+}
+
+function wrap(method) {
+  NodeFire.prototype[method] = function() {
+    return new NodeFire(
+      this.$firebase[method].apply(this.$firebase, arguments), undefined, this.$host);
+  };
+}
 
 /* Some methods that work the same as on Firebase objects. */
-NodeFire.prototype.parent = function();
-NodeFire.prototype.root = function();
-NodeFire.prototype.toString = function();
-NodeFire.prototype.name = function();
+wrap('parent');
+wrap('root');
+delegate('name');
 
 /* Listener registration methods.  They work the same as on Firebase objects, but note that if you
    get a reference from a snapshot returned by one of these it will *not* be wrapped in a NodeFire
    object.
 */
-NodeFire.prototype.on = function(eventType, callback, cancelCallback, context);
-NodeFire.prototype.off = function(eventType, callback, context);
-NodeFire.prototype.once = function(eventType, successCallback, failureCallback, context);
+delegate('on');
+delegate('off');
+delegate('once');
 
 /* Query methods, same as on Firebase objects. */
-NodeFire.prototype.limit = function(limit);
-NodeFire.prototype.startAt = function(priority, name);
-NodeFire.prototype.endAt = function(priority, name);
-```
+wrap('limit');
+wrap('startAt');
+wrap('endAt');
+
+function getNormalValue(snap) {
+  var value = snap.val();
+  if (_.isArray(value)) {
+    var normalValue = {};
+    _.forEach(value, function(item, key) {
+      if (!(item === null || _.isUndefined(item))) {
+        normalValue[key] = item;
+      }
+    });
+    value = normalValue;
+  }
+  if (snap.getPriority() !== null && _.isObject(value)) value['.priority'] = snap.getPriority();
+  return value;
+}
+
+function interceptFirebaseDebugLogs() {
+  var originalLog = console.log;
+  var logBuffer = [];
+  console.log = function() {
+    if (arguments.length && /^FIREBASE:/.test(arguments[0])) {
+      var message = Array.prototype.slice.call(arguments).join(' ');
+      if (/^FIREBASE: Attempt to (read|write)/.test(message)) logBuffer = [];
+      logBuffer.push(message);
+      if (/^FIREBASE: (Read|Write) was denied/.test(message)) {
+        originalLog('Firebase permission denied debug log:\n' + logBuffer.join('\n'));
+      }
+      if (/^FIREBASE: (Read|Write) was (allowed|denied)/.test(message)) logBuffer = [];
+    } else {
+      originalLog.apply(this, arguments);
+    }
+  };
+}
