@@ -2,6 +2,7 @@ NodeFire
 ========
 
 NodeFire is a Firebase library for NodeJS that has a pretty similar API but adds the following features:
+
 1. Most methods return a promise, instead of requiring a callback.  This works especially nicely with Node's `--harmony` flag and a framework like `co`, allowing you to control data flow with `yield` statements.
 2. Any paths passed in are treated as templates and interpolated within an implicit or explicit scope, avoiding manual (and error-prone) string concatenation.  Characters forbidden by Firebase are automatically escaped.
 3. Since one-time fetches of a reference are common in server code, a new `get` method makes them easy and an optional LRU cache keeps the most used ones pinned and synced to reduce latency.
