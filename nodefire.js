@@ -10,6 +10,8 @@ var LRUCache = require('lru-cache');
 var cache;
 var serverTimeOffsets = {};
 
+function noopCallback() {}
+
 /**
  * A wrapper around a Firebase reference, and the main entry point to the module.  You can pretty
  * much use this class as you would use the Firebase class.  The two major differences are:
@@ -58,7 +60,7 @@ NodeFire.setCacheSize = function(max) {
   if (max) {
     if (!cache) {
       cache = new LRUCache({max: max, dispose: function(key, ref) {
-        ref.off('value', _.identity);
+        ref.off('value', noopCallback);
       }});
     } else {
       cache.max = max;
@@ -191,7 +193,7 @@ NodeFire.prototype.get = function() {
   var url = this.toString();
   if (cache && !cache.has(url)) {
     cache.set(url, this);
-    this.on('value', _.identity);
+    this.on('value', noopCallback);
   }
   return new Promise(function(resolve, reject) {
     self.$firebase.once('value', function(snap) {
