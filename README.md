@@ -147,6 +147,15 @@ NodeFire.prototype.get = function();
 NodeFire.prototype.set = function(value);
 
 /**
+ * Sets the priority at this reference.  Useful because you can't pass a ".priority" key to
+ * update().
+ * @param {string || number} priority The priority for the data at this reference.
+ * @returns {Promise} A promise that is resolved when the priority has been set, or rejected with an
+ *     error.
+ */
+NodeFire.prototype.setPriority = function(priority);
+
+/**
  * Updates a value at this reference, setting only the top-level keys supplied and leaving any other
  * ones as-is.  To set the priority, include a ".priority" attribute on the value.
  * @param  {Object} value The value to update the reference with.
