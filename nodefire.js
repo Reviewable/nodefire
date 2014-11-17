@@ -350,7 +350,7 @@ function wrap(method) {
 /* Some methods that work the same as on Firebase objects. */
 wrap('parent');
 wrap('root');
-delegate('name');
+delegate('key');
 
 /* Listener registration methods.  They work the same as on Firebase objects, but note that if you
    get a reference from a snapshot returned by one of these it will *not* be wrapped in a NodeFire
@@ -361,9 +361,15 @@ delegate('off');
 delegate('once');
 
 /* Query methods, same as on Firebase objects. */
-wrap('limit');
+wrap('limitToFirst');
+wrap('limitToLast');
 wrap('startAt');
 wrap('endAt');
+wrap('equalTo');
+wrap('orderByChild');
+wrap('orderByKey');
+wrap('orderByPriority');
+wrap('ref');
 
 function getNormalValue(snap) {
   var value = snap.val();
