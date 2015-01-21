@@ -60,7 +60,7 @@ NodeFire.DEBUG = false;
 /* Some static methods copied over from the Firebase class. */
 NodeFire.goOffline = Firebase.goOffline;
 NodeFire.goOnline = Firebase.goOnline;
-NodeFire.prototype.ServerValue = Firebase.ServerValue;
+NodeFire.ServerValue = Firebase.ServerValue;
 
 /**
  * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not used
@@ -209,7 +209,8 @@ NodeFire.prototype.now = function();
 NodeFire.prototype.parent = function();
 NodeFire.prototype.root = function();
 NodeFire.prototype.toString = function();
-NodeFire.prototype.name = function();
+NodeFire.prototype.key = function();
+NodeFire.prototype.ref = function();
 
 /* Listener registration methods.  They work the same as on Firebase objects, but note that if you
    get a reference from a snapshot returned by one of these it will *not* be wrapped in a NodeFire
@@ -220,7 +221,12 @@ NodeFire.prototype.off = function(eventType, callback, context);
 NodeFire.prototype.once = function(eventType, successCallback, failureCallback, context);
 
 /* Query methods, same as on Firebase objects. */
-NodeFire.prototype.limit = function(limit);
+NodeFire.prototype.limitToFirst = function(limit);
+NodeFire.prototype.limitToLast = function(limit);
 NodeFire.prototype.startAt = function(priority, name);
 NodeFire.prototype.endAt = function(priority, name);
+NodeFire.prototype.equalTo = function(value, key);
+NodeFire.prototype.orderByChild = function(key);
+NodeFire.prototype.orderByKey = function();
+NodeFire.prototype.orderByPriority = function();
 ```

@@ -49,7 +49,7 @@ NodeFire.DEBUG = false;
 /* Some static methods copied over from the Firebase class. */
 NodeFire.goOffline = Firebase.goOffline;
 NodeFire.goOnline = Firebase.goOnline;
-NodeFire.prototype.ServerValue = Firebase.ServerValue;
+NodeFire.ServerValue = Firebase.ServerValue;
 
 /**
  * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not used
@@ -323,7 +323,7 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
  * @return {string} A unique string that satisfies Firebase's key syntax constraints.
  */
 NodeFire.prototype.generateUniqueKey = function() {
-  return this.$firebase.push().name();
+  return this.$firebase.push().key();
 };
 
 /**
