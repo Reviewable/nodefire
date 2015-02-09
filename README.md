@@ -52,7 +52,8 @@ module.exports = function NodeFire(refOrUrl, scope, host);
 
 /**
  * Flag that indicates whether to run in debug mode.  Currently only has an effect on calls to
- *     auth(), and must be set to the desired value before any such calls.
+ *     auth(), and must be set to the desired value before any such calls.  Note that turning on
+ *     debug mode will slow down processing of Firebase commands and increase required bandwidth.
  * @type {boolean} True to put the library into debug mode, false otherwise.
  */
 NodeFire.DEBUG = false;
@@ -157,7 +158,7 @@ NodeFire.prototype.setPriority = function(priority);
 
 /**
  * Updates a value at this reference, setting only the top-level keys supplied and leaving any other
- * ones as-is.  To set the priority, include a ".priority" attribute on the value.
+ * ones as-is.
  * @param  {Object} value The value to update the reference with.
  * @return {Promise} A promise that is resolved when the value has been updated, or rejected with an
  *     error.
@@ -212,9 +213,12 @@ NodeFire.prototype.toString = function();
 NodeFire.prototype.key = function();
 NodeFire.prototype.ref = function();
 
-/* Listener registration methods.  They work the same as on Firebase objects, but note that if you
-   get a reference from a snapshot returned by one of these it will *not* be wrapped in a NodeFire
-   object.
+/* Listener registration methods.  They work the same as on Firebase objects, except that the
+   snapshot passed into the callback (and forEach) is wrapped such that:
+     1) The val() method will return a normalized method (like NodeFire.get() does).
+     2) The ref() method will return a NodeFire reference, with the same scope as the reference
+        on which on() was called.
+     3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
 */
 NodeFire.prototype.on = function(eventType, callback, cancelCallback, context);
 NodeFire.prototype.off = function(eventType, callback, context);

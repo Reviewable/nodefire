@@ -39,9 +39,19 @@ var NodeFire = function(refOrUrl, scope, host) {
 };
 module.exports = NodeFire;
 
+/** A wrapper around a Firebase DataSnapshot.  Works just like a Firebase snapshot, except that
+    ref() returns a NodeFire instance, val() normalizes the value, and child() takes an optional
+    refining scope.
+ */
+var Snapshot = function(snap, nodeFire) {
+  this.$snap = snap;
+  this.$nodeFire = nodeFire;
+};
+
 /**
  * Flag that indicates whether to run in debug mode.  Currently only has an effect on calls to
- *     auth(), and must be set to the desired value before any such calls.
+ *     auth(), and must be set to the desired value before any such calls.  Note that turning on
+ *     debug mode will slow down processing of Firebase commands and increase required bandwidth.
  * @type {boolean} True to put the library into debug mode, false otherwise.
  */
 NodeFire.DEBUG = false;
@@ -318,6 +328,51 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
   });
 };
 
+// We need to wrap the user's callback so that we can wrap each snapshot, but must keep track of the
+// wrapper function in case the user calls off().  We don't reuse wrappers so that the number of
+// wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
+// call to off().
+function captureCallback(nodeFire, callback) {
+  callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || [];
+  var nodeFireCallback = function(snap, previousChildKey) {
+    return callback.call(this, new Snapshot(snap, nodeFire), previousChildKey);
+  };
+  callback.$nodeFireCallbacks.push(nodeFireCallback);
+  return nodeFireCallback;
+}
+
+/**
+ * Registers a listener for an event on this reference.  Works the same as the Firebase method
+ * except that the snapshot passed into the callback will be wrapped such that:
+ *   1) The val() method will return a normalized method (like NodeFire.get() does).
+ *   2) The ref() method will return a NodeFire reference, with the same scope as the reference
+ *      on which on() was called.
+ *   3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
+ */
+NodeFire.prototype.on = function(eventType, callback, cancelCallback, context) {
+  this.$firebase.on(eventType, captureCallback(this, callback), cancelCallback, context);
+  return callback;
+};
+
+/**
+ * Unregisters a listener.  Works the same as the Firebase method.
+ */
+NodeFire.prototype.off = function(eventType, callback, context) {
+  this.$firebase.off(eventType, callback && callback.$nodeFireCallbacks.pop(), context);
+};
+
+/**
+ * Listens for exactly one event of the given event type, then stops listening.  Works the same as
+ * the Firebase method, except that the snapshot passed into the callback will be wrapped like for
+ * the on() method.
+ */
+NodeFire.prototype.once = function(eventType, callback, failureCallback, context) {
+  var self = this;
+  this.$firebase.once(eventType, function(snap, previousChildKey) {
+    return callback.call(this, new Snapshot(snap, self), previousChildKey);
+  }, failureCallback, context);
+};
+
 /**
  * Generates a unique string that can be used as a key in Firebase.
  * @return {string} A unique string that satisfies Firebase's key syntax constraints.
@@ -334,42 +389,68 @@ NodeFire.prototype.now = function() {
   return new Date().getTime() + serverTimeOffsets[this.$host];
 };
 
-function delegate(method) {
+Snapshot.prototype.val = function() {
+  return getNormalValue(this.$snap);
+};
+
+Snapshot.prototype.child = function(path, scope) {
+  var childNodeFire = this.$nodeFire.scope(scope);
+  return new Snapshot(this.$snap.child(childNodeFire.interpolate(path)), childNodeFire);
+};
+
+Snapshot.prototype.forEach = function(callback) {
+  this.$snap.forEach(function(child) {
+    return callback(new Snapshot(child, this.$nodeFire));
+  });
+};
+
+Snapshot.prototype.ref = function() {
+  return new NodeFire(this.$snap.ref(), this.$nodeFire.$scope, this.$nodeFire.$host);
+};
+
+function delegateNodeFire(method) {
   NodeFire.prototype[method] = function() {
     return this.$firebase[method].apply(this.$firebase, arguments);
   };
 }
 
-function wrap(method) {
+function wrapNodeFire(method) {
   NodeFire.prototype[method] = function() {
     return new NodeFire(
       this.$firebase[method].apply(this.$firebase, arguments), undefined, this.$host);
   };
 }
 
-/* Some methods that work the same as on Firebase objects. */
-wrap('parent');
-wrap('root');
-delegate('key');
+function delegateSnapshot(method) {
+  Snapshot.prototype[method] = function() {
+    return this.$snap[method].apply(this.$snap, arguments);
+  };
+}
 
-/* Listener registration methods.  They work the same as on Firebase objects, but note that if you
-   get a reference from a snapshot returned by one of these it will *not* be wrapped in a NodeFire
-   object.
-*/
-delegate('on');
-delegate('off');
-delegate('once');
+/* Some methods that work the same as on Firebase objects. */
+wrapNodeFire('parent');
+wrapNodeFire('root');
+delegateNodeFire('key');
 
 /* Query methods, same as on Firebase objects. */
-wrap('limitToFirst');
-wrap('limitToLast');
-wrap('startAt');
-wrap('endAt');
-wrap('equalTo');
-wrap('orderByChild');
-wrap('orderByKey');
-wrap('orderByPriority');
-wrap('ref');
+wrapNodeFire('limitToFirst');
+wrapNodeFire('limitToLast');
+wrapNodeFire('startAt');
+wrapNodeFire('endAt');
+wrapNodeFire('equalTo');
+wrapNodeFire('orderByChild');
+wrapNodeFire('orderByKey');
+wrapNodeFire('orderByPriority');
+wrapNodeFire('ref');
+
+/* Snapshot methods that work the same. */
+delegateSnapshot('exists');
+delegateSnapshot('hasChild');
+delegateSnapshot('hasChildren');
+delegateSnapshot('key');
+delegateSnapshot('numChildren');
+delegateSnapshot('getPriority');
+delegateSnapshot('exportVal');
 
 function getNormalValue(snap) {
   var value = snap.val();
