@@ -328,6 +328,8 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
   });
 };
 
+// TODO: add user/password-related methods
+
 // We need to wrap the user's callback so that we can wrap each snapshot, but must keep track of the
 // wrapper function in case the user calls off().  We don't reuse wrappers so that the number of
 // wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
@@ -440,6 +442,7 @@ wrapNodeFire('endAt');
 wrapNodeFire('equalTo');
 wrapNodeFire('orderByChild');
 wrapNodeFire('orderByKey');
+wrapNodeFire('orderByValue');
 wrapNodeFire('orderByPriority');
 wrapNodeFire('ref');
 
