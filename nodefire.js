@@ -6,6 +6,7 @@ var FirebaseTokenGenerator = require('firebase-token-generator');
 var _ = require('underscore');
 var url = require('url');
 var LRUCache = require('lru-cache');
+var co = require('co');
 
 var cache;
 var serverTimeOffsets = {};
@@ -337,10 +338,20 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
 function captureCallback(nodeFire, callback) {
   callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || [];
   var nodeFireCallback = function(snap, previousChildKey) {
-    return callback.call(this, new Snapshot(snap, nodeFire), previousChildKey);
+    runGenerator(callback.call(this, new Snapshot(snap, nodeFire), previousChildKey));
   };
   callback.$nodeFireCallbacks.push(nodeFireCallback);
   return nodeFireCallback;
+}
+
+function runGenerator(o) {
+  var promise;
+  if (o instanceof Promise) {
+    promise = o;
+  } else if (o && typeof o.next === 'function' && typeof o.throw === 'function') {
+    promise = co(o);
+  }
+  if (promise) promise.catch(function(error) {throw error;});
 }
 
 /**
@@ -371,7 +382,7 @@ NodeFire.prototype.off = function(eventType, callback, context) {
 NodeFire.prototype.once = function(eventType, callback, failureCallback, context) {
   var self = this;
   this.$firebase.once(eventType, function(snap, previousChildKey) {
-    return callback.call(this, new Snapshot(snap, self), previousChildKey);
+    runGenerator(callback.call(this, new Snapshot(snap, self), previousChildKey));
   }, failureCallback, context);
 };
 

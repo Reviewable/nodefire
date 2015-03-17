@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "index.js",
   "scripts": {
@@ -22,6 +22,7 @@
   },
   "homepage": "https://github.com/pkaminski/nodefire",
   "dependencies": {
+    "co": "^4.4.0",
     "es6-promise": "^2.0.0",
     "firebase": "^2.2",
     "firebase-token-generator": "^2.0.0",
