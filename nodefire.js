@@ -207,6 +207,7 @@ NodeFire.prototype.get = function() {
     this.on('value', noopCallback);
   }
   return new Promise(function(resolve, reject) {
+    reject = wrapReject(self, 'get', reject);
     self.$firebase.once('value', function(snap) {
       resolve(getNormalValue(snap));
     }, reject);
@@ -223,6 +224,7 @@ NodeFire.prototype.get = function() {
 NodeFire.prototype.set = function(value) {
   var self = this;
   return new Promise(function(resolve, reject) {
+    reject = wrapReject(self, 'set', reject);
     self.$firebase.set(value, function(error) {
       if (error) reject(error); else resolve();
     });
@@ -239,6 +241,7 @@ NodeFire.prototype.set = function(value) {
 NodeFire.prototype.setPriority = function(priority) {
   var self = this;
   return new Promise(function(resolve, reject) {
+    reject = wrapReject(self, 'setPriority', reject);
     self.$firebase.setPriority(priority, function(error) {
       if (error) reject(error); else resolve();
     });
@@ -255,6 +258,7 @@ NodeFire.prototype.setPriority = function(priority) {
 NodeFire.prototype.update = function(value) {
   var self = this;
   return new Promise(function(resolve, reject) {
+    reject = wrapReject(self, 'update', reject);
     self.$firebase.update(value, function(error) {
       if (error) reject(error); else resolve();
     });
@@ -269,6 +273,7 @@ NodeFire.prototype.update = function(value) {
 NodeFire.prototype.remove = function() {
   var self = this;
   return new Promise(function(resolve, reject) {
+    reject = wrapReject(self, 'remove', reject);
     self.$firebase.remove(function(error) {
       if (error) reject(error); else resolve();
     });
@@ -285,6 +290,7 @@ NodeFire.prototype.remove = function() {
 NodeFire.prototype.push = function(value) {
   var self = this;
   return new Promise(function(resolve, reject) {
+    reject = wrapReject(self, 'push', reject);
     var ref = self.$firebase.push(value, function(error) {
       if (error) reject(error); else resolve(new NodeFire(ref, self.$scope, self.$host));
     });
@@ -306,6 +312,7 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
   var self = this;
   applyLocally = applyLocally || false;
   return new Promise(function(resolve, reject) {
+    reject = wrapReject(self, 'transaction', reject);
     var txn = _.once(function() {
       try {
         self.$firebase.transaction(updateFunction, function(error, committed, snap) {
@@ -363,6 +370,7 @@ function runGenerator(o) {
  *   3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
  */
 NodeFire.prototype.on = function(eventType, callback, cancelCallback, context) {
+  cancelCallback = wrapReject(this, 'on', cancelCallback);
   this.$firebase.on(eventType, captureCallback(this, callback), cancelCallback, context);
   return callback;
 };
@@ -381,6 +389,7 @@ NodeFire.prototype.off = function(eventType, callback, context) {
  */
 NodeFire.prototype.once = function(eventType, callback, failureCallback, context) {
   var self = this;
+  failureCallback = wrapReject(this, 'on', failureCallback);
   this.$firebase.once(eventType, function(snap, previousChildKey) {
     runGenerator(callback.call(this, new Snapshot(snap, self), previousChildKey));
   }, failureCallback, context);
@@ -465,6 +474,12 @@ delegateSnapshot('key');
 delegateSnapshot('numChildren');
 delegateSnapshot('getPriority');
 delegateSnapshot('exportVal');
+
+function wrapReject(nodefire, method, reject) {
+  return function(error) {
+    reject(new Error('Firebase ' + method + '(' + nodefire.toString() + '): ' + error));
+  };
+}
 
 function getNormalValue(snap) {
   var value = snap.val();
