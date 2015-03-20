@@ -477,7 +477,8 @@ delegateSnapshot('exportVal');
 
 function wrapReject(nodefire, method, reject) {
   return function(error) {
-    reject(new Error('Firebase ' + method + '(' + nodefire.toString() + '): ' + error));
+    error.message = 'Firebase ' + method + '(' + nodefire.toString() + '): ' + error.message;
+    reject(error);
   };
 }
 
