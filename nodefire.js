@@ -224,7 +224,7 @@ NodeFire.prototype.get = function() {
 NodeFire.prototype.set = function(value) {
   var self = this;
   return new Promise(function(resolve, reject) {
-    reject = wrapReject(self, 'set', reject);
+    reject = wrapReject(self, 'set', value, reject);
     self.$firebase.set(value, function(error) {
       if (error) reject(error); else resolve();
     });
@@ -241,7 +241,7 @@ NodeFire.prototype.set = function(value) {
 NodeFire.prototype.setPriority = function(priority) {
   var self = this;
   return new Promise(function(resolve, reject) {
-    reject = wrapReject(self, 'setPriority', reject);
+    reject = wrapReject(self, 'setPriority', priority, reject);
     self.$firebase.setPriority(priority, function(error) {
       if (error) reject(error); else resolve();
     });
@@ -258,7 +258,7 @@ NodeFire.prototype.setPriority = function(priority) {
 NodeFire.prototype.update = function(value) {
   var self = this;
   return new Promise(function(resolve, reject) {
-    reject = wrapReject(self, 'update', reject);
+    reject = wrapReject(self, 'update', value, reject);
     self.$firebase.update(value, function(error) {
       if (error) reject(error); else resolve();
     });
@@ -290,7 +290,7 @@ NodeFire.prototype.remove = function() {
 NodeFire.prototype.push = function(value) {
   var self = this;
   return new Promise(function(resolve, reject) {
-    reject = wrapReject(self, 'push', reject);
+    reject = wrapReject(self, 'push', value, reject);
     var ref = self.$firebase.push(value, function(error) {
       if (error) reject(error); else resolve(new NodeFire(ref, self.$scope, self.$host));
     });
@@ -312,10 +312,14 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
   var self = this;
   applyLocally = applyLocally || false;
   return new Promise(function(resolve, reject) {
-    reject = wrapReject(self, 'transaction', reject);
+    var wrappedUpdateFunction = function() {
+      var result = updateFunction.apply(this, arguments);
+      reject = wrapReject(self, 'transaction', result, reject);
+      return result;
+    };
     var txn = _.once(function() {
       try {
-        self.$firebase.transaction(updateFunction, function(error, committed, snap) {
+        self.$firebase.transaction(wrappedUpdateFunction, function(error, committed, snap) {
           self.$firebase.off('value', txn);
           if (error) {
             reject(error);
@@ -475,9 +479,18 @@ delegateSnapshot('numChildren');
 delegateSnapshot('getPriority');
 delegateSnapshot('exportVal');
 
-function wrapReject(nodefire, method, reject) {
+function wrapReject(nodefire, method, value, reject) {
+  var hasValue = true;
+  if (!reject) {
+    reject = value;
+    hasValue = false;
+  }
   return function(error) {
-    error.message = 'Firebase ' + method + '(' + nodefire.toString() + '): ' + error.message;
+    var message = 'Firebase ' + method + '(' + nodefire.toString() + '): ' + error.message;
+    if (hasValue && error.message.toLowerCase() === 'permission_denied') {
+      message += ' for ' + JSON.stringify(value, null, '  ');
+    }
+    error.message = message;
     reject(error);
   };
 }
