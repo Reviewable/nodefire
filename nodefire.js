@@ -13,6 +13,12 @@ var serverTimeOffsets = {};
 
 function noopCallback() {}
 
+function trackTimeOffset(host) {
+  new Firebase('https://' + host + '/.info/serverTimeOffset').on('value', function(snap) {
+    serverTimeOffsets[host] = snap.val();
+  }, _.bind(trackTimeOffset, host));
+}
+
 /**
  * A wrapper around a Firebase reference, and the main entry point to the module.  You can pretty
  * much use this class as you would use the Firebase class.  The two major differences are:
@@ -33,9 +39,7 @@ var NodeFire = function(refOrUrl, scope, host) {
   this.$host = host;
   if (!(host in serverTimeOffsets)) {
     serverTimeOffsets[host] = 0;
-    new Firebase('https://' + host + '/.info/serverTimeOffset').on('value', function(snap) {
-      serverTimeOffsets[host] = snap.val();
-    });
+    trackTimeOffset(host);
   }
 };
 module.exports = NodeFire;
@@ -204,7 +208,9 @@ NodeFire.prototype.get = function() {
   var url = this.toString();
   if (cache && !cache.has(url)) {
     cache.set(url, this);
-    this.on('value', noopCallback);
+    this.on('value', noopCallback, function() {
+      if (cache) cache.del(url);
+    });
   }
   return new Promise(function(resolve, reject) {
     reject = wrapReject(self, 'get', reject);
@@ -336,7 +342,7 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
     // Prefetch the data and keep it "live" during the transaction, to avoid running the
     // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
     // from the server.
-    self.$firebase.on('value', txn);
+    self.$firebase.on('value', txn, wrapReject(self, 'transaction', reject));
   });
 };
 
@@ -485,6 +491,7 @@ function wrapReject(nodefire, method, value, reject) {
     reject = value;
     hasValue = false;
   }
+  if (!reject) return reject;
   return function(error) {
     var message = 'Firebase ' + method + '(' + nodefire.toString() + '): ' + error.message;
     if (hasValue && error.message.toLowerCase() === 'permission_denied') {
