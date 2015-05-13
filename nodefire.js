@@ -61,6 +61,12 @@ var Snapshot = function(snap, nodeFire) {
  */
 NodeFire.DEBUG = false;
 
+/**
+ * Flag that indicates whether to log transactions and the number of tries needed.
+ * @type {boolean} True to log metadata about every transaction.
+ */
+NodeFire.LOG_TRANSACTIONS = false;
+
 /* Some static methods copied over from the Firebase class. */
 NodeFire.goOffline = Firebase.goOffline;
 NodeFire.goOnline = Firebase.goOnline;
@@ -316,9 +322,11 @@ NodeFire.prototype.push = function(value) {
  */
 NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
   var self = this;
+  var tries = 0;
   applyLocally = applyLocally || false;
   return new Promise(function(resolve, reject) {
     var wrappedUpdateFunction = function() {
+      tries++;
       var result = updateFunction.apply(this, arguments);
       reject = wrapReject(self, 'transaction', result, reject);
       return result;
@@ -326,6 +334,12 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
     var txn = _.once(function() {
       try {
         self.$firebase.transaction(wrappedUpdateFunction, function(error, committed, snap) {
+          if (NodeFire.LOG_TRANSACTIONS) {
+            console.log(JSON.stringify({txn: {
+              tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
+              outcome: error ? 'error' : (committed ? 'commit': 'skip')
+            }}));
+          }
           self.$firebase.off('value', txn);
           if (error) {
             reject(error);
