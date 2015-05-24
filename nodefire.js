@@ -1,6 +1,6 @@
 'use strict';
 
-require('es6-promise').polyfill();
+if (typeof Promise === 'undefined') require('es6-promise').polyfill();
 var Firebase = require('firebase');
 var FirebaseTokenGenerator = require('firebase-token-generator');
 var _ = require('underscore');
