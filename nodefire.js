@@ -5,7 +5,7 @@ var Firebase = require('firebase');
 var FirebaseTokenGenerator = require('firebase-token-generator');
 var _ = require('underscore');
 var url = require('url');
-var LRUCache = require('lru-cache');
+var LRUCache = require('serialized-lru-cache');
 var co = require('co');
 
 var cache;
