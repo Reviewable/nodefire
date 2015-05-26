@@ -77,6 +77,23 @@ NodeFire.setCacheSize = function(max);
 NodeFire.getCacheCount = function();
 
 /**
+ * Gets the current cache hit rate.  This is very approximate, as it's only counted for get() and
+ * transaction() calls, and is unable to count ancestor hits, where the ancestor of the requested
+ * item is actually cached.
+ * @return {number} The cache's current hit rate.
+ */
+NodeFire.getCacheHitRate = function() {
+  return (cacheHits || cacheMisses) ? cacheHits / (cacheHits + cacheMisses) : 0;
+};
+
+/**
+ * Resets the cache's hit rate counters back to zero.
+ */
+NodeFire.resetCacheHitRate = function() {
+  cacheHits = cacheMisses = 0;
+};
+
+/**
  * Interpolates variables into a template string based on the object's scope (passed into the
  * constructor, if any) and the optional scope argument.  Characters forbidden by Firebase are
  * escaped into a "\xx" hex format.

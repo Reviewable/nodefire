@@ -8,7 +8,7 @@ var url = require('url');
 var LRUCache = require('serialized-lru-cache');
 var co = require('co');
 
-var cache;
+var cache, cacheHits = 0, cacheMisses = 0;
 var serverTimeOffsets = {};
 
 function noopCallback() {}
@@ -44,9 +44,10 @@ var NodeFire = function(refOrUrl, scope, host) {
 };
 module.exports = NodeFire;
 
-/** A wrapper around a Firebase DataSnapshot.  Works just like a Firebase snapshot, except that
-    ref() returns a NodeFire instance, val() normalizes the value, and child() takes an optional
-    refining scope.
+/**
+  A wrapper around a Firebase DataSnapshot.  Works just like a Firebase snapshot, except that
+  ref() returns a NodeFire instance, val() normalizes the value, and child() takes an optional
+  refining scope.
  */
 var Snapshot = function(snap, nodeFire) {
   this.$snap = snap;
@@ -98,6 +99,23 @@ NodeFire.setCacheSize = function(max) {
  */
 NodeFire.getCacheCount = function() {
   return cache ? cache.itemCount : 0;
+};
+
+/**
+ * Gets the current cache hit rate.  This is very approximate, as it's only counted for get() and
+ * transaction() calls, and is unable to count ancestor hits, where the ancestor of the requested
+ * item is actually cached.
+ * @return {number} The cache's current hit rate.
+ */
+NodeFire.getCacheHitRate = function() {
+  return (cacheHits || cacheMisses) ? cacheHits / (cacheHits + cacheMisses) : 0;
+};
+
+/**
+ * Resets the cache's hit rate counters back to zero.
+ */
+NodeFire.resetCacheHitRate = function() {
+  cacheHits = cacheMisses = 0;
 };
 
 /**
@@ -212,11 +230,16 @@ NodeFire.prototype.child = function(path, scope) {
 NodeFire.prototype.get = function() {
   var self = this;
   var url = this.toString();
-  if (cache && !cache.has(url)) {
-    cache.set(url, this);
-    this.on('value', noopCallback, function() {
-      if (cache) cache.del(url);
-    });
+  if (cache) {
+    if (cache.has(url)) {
+      cacheHits++;
+    } else {
+      cacheMisses++;
+      cache.set(url, this);
+      this.on('value', noopCallback, function() {
+        if (cache) cache.del(url);
+      });
+    }
   }
   return new Promise(function(resolve, reject) {
     reject = wrapReject(self, 'get', reject);
@@ -353,6 +376,9 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
         reject(e);
       }
     });
+    if (cache) {
+      if (cache.has(self.toString())) cacheHits++; else cacheMisses++;
+    }
     // Prefetch the data and keep it "live" during the transaction, to avoid running the
     // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
     // from the server.
