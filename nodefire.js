@@ -347,7 +347,7 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
   var self = this;
   applyLocally = applyLocally || false;
   return new Promise(function(resolve, reject) {
-    var tries = 0, result, wrappedReject;
+    var tries = 0, result, wrappedReject = reject;
     var wrappedUpdateFunction = function() {
       tries++;
       result = updateFunction.apply(this, arguments);
