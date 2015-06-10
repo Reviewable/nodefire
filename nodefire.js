@@ -345,13 +345,13 @@ NodeFire.prototype.push = function(value) {
  */
 NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
   var self = this;
-  var tries = 0;
   applyLocally = applyLocally || false;
   return new Promise(function(resolve, reject) {
+    var tries = 0, result, wrappedReject;
     var wrappedUpdateFunction = function() {
       tries++;
-      var result = updateFunction.apply(this, arguments);
-      reject = wrapReject(self, 'transaction', result, reject);
+      result = updateFunction.apply(this, arguments);
+      wrappedReject = wrapReject(self, 'transaction', result, reject);
       return result;
     };
     var txn = _.once(function() {
@@ -360,12 +360,12 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
           if (NodeFire.LOG_TRANSACTIONS) {
             console.log(JSON.stringify({txn: {
               tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
-              outcome: error ? 'error' : (committed ? 'commit': 'skip')
+              outcome: error ? 'error' : (committed ? 'commit': 'skip'), value: result
             }}));
           }
           self.$firebase.off('value', txn);
           if (error) {
-            reject(error);
+            wrappedReject(error);
           } else if (committed) {
             resolve(getNormalValue(snap));
           } else {
@@ -373,7 +373,7 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
           }
         }, applyLocally);
       } catch(e) {
-        reject(e);
+        wrappedReject(e);
       }
     });
     if (cache) {
@@ -534,7 +534,8 @@ function wrapReject(nodefire, method, value, reject) {
   if (!reject) return reject;
   return function(error) {
     var message = 'Firebase ' + method + '(' + nodefire.toString() + '): ' + error.message;
-    if (hasValue && error.message.toLowerCase() === 'permission_denied') {
+    if (hasValue &&
+        _.contains(['permission_denied', 'set', 'maxretry'], error.message.toLowerCase())) {
       message += ' for ' + JSON.stringify(value, null, '  ');
     }
     error.message = message;
