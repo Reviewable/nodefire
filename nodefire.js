@@ -533,12 +533,9 @@ function wrapReject(nodefire, method, value, reject) {
   }
   if (!reject) return reject;
   return function(error) {
-    var message = 'Firebase ' + method + '(' + nodefire.toString() + '): ' + error.message;
-    if (hasValue &&
-        _.contains(['permission_denied', 'set', 'maxretry'], error.message.toLowerCase())) {
-      message += ' for ' + JSON.stringify(value, null, '  ');
-    }
-    error.message = message;
+    error.message = 'Firebase: ' + error.message;
+    error.firebase = {method: method, ref: nodefire.toString()};
+    if (hasValue) error.firebase.value = value;
     reject(error);
   };
 }
