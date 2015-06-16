@@ -74,6 +74,14 @@ NodeFire.goOnline = Firebase.goOnline;
 NodeFire.ServerValue = Firebase.ServerValue;
 
 /**
+ * Turn Firebase low-level connection logging on or off.
+ * @param {boolean} enable Whether to enable or disable logging.
+ */
+NodeFire.enableFirebaseLogging = function(enable) {
+  Firebase.enableLogging(enable);
+};
+
+/**
  * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not used
  * unless you set a non-zero maximum.
  * @param {number} max The maximum number of values to keep pinned in the cache.
