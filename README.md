@@ -58,10 +58,33 @@ module.exports = function NodeFire(refOrUrl, scope, host);
  */
 NodeFire.DEBUG = false;
 
+/**
+ * Flag that indicates whether to log transactions and the number of tries needed.
+ * @type {boolean} True to log metadata about every transaction.
+ */
+NodeFire.LOG_TRANSACTIONS = false;
+
+/**
+ * A special constant that you can pass to enableFirebaseLogging to keep a rolling buffer of
+ * Firebase logs without polluting the console, to be grabbed and saved only when needed.
+ */
+NodeFire.ROLLING = {};
+
 /* Some static methods copied over from the Firebase class. */
 NodeFire.goOffline = Firebase.goOffline;
 NodeFire.goOnline = Firebase.goOnline;
 NodeFire.ServerValue = Firebase.ServerValue;
+
+/**
+ * Turn Firebase low-level connection logging on or off.
+ * @param {boolean | ROLLING} enable Whether to enable or disable logging, or enable rolling logs.
+ *        Rolling logs can only be enabled once; any further calls to enableFirebaseLogging will
+ *        disable them permanently.
+ * @returns If ROLLING logs were requested, returns a handle to FirebaseRollingLog (see
+ *          https://github.com/mikelehen/firebase-rolling-log for details).  Otherwise returns
+ *          nothing.
+ */
+NodeFire.enableFirebaseLogging = function(enable);
 
 /**
  * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not used
