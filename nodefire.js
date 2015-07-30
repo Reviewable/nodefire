@@ -372,12 +372,12 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
   return new Promise(function(resolve, reject) {
     var tries = 0, result, wrappedReject = reject;
     var wrappedUpdateFunction = function() {
-      tries++;
+      if (++tries > 100) throw new Error('maxretry');
       result = updateFunction.apply(this, arguments);
       wrappedReject = wrapReject(self, 'transaction', result, reject);
       return result;
     };
-    var txn = _.once(function() {
+    function txn() {
       try {
         self.$firebase.transaction(wrappedUpdateFunction, function(error, committed, snap) {
           if (NodeFire.LOG_TRANSACTIONS) {
@@ -386,7 +386,11 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
               outcome: error ? 'error' : (committed ? 'commit': 'skip'), value: result
             }}));
           }
-          self.$firebase.off('value', txn);
+          if (error && error.message === 'set') {
+            txn();
+            return;
+          }
+          self.$firebase.off('value', onceTxn);
           if (error) {
             wrappedReject(error);
           } else if (committed) {
@@ -398,14 +402,15 @@ NodeFire.prototype.transaction = function(updateFunction, applyLocally) {
       } catch(e) {
         wrappedReject(e);
       }
-    });
+    }
+    var onceTxn = _.once(txn);
     if (cache) {
       if (cache.has(self.toString())) cacheHits++; else cacheMisses++;
     }
     // Prefetch the data and keep it "live" during the transaction, to avoid running the
     // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
     // from the server.
-    self.$firebase.on('value', txn, wrapReject(self, 'transaction', reject));
+    self.$firebase.on('value', onceTxn, wrapReject(self, 'transaction', reject));
   });
 };
 
