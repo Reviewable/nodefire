@@ -142,6 +142,17 @@ NodeFire.resetCacheHitRate = function() {
 };
 
 /**
+ * Unescapes a previously interpolated key.
+ * @param {string} key The key to unescape.
+ * @return {string} The original unescaped key.
+ */
+NodeFire.unescape = function(key) {
+  return key.toString().replace(/\\[0-9a-f]{2}/gi, function(code) {
+    return String.fromCharCode(parseInt(code.slice(1), 16));
+  });
+};
+
+/**
  * Interpolates variables into a template string based on the object's scope (passed into the
  * constructor, if any) and the optional scope argument.  Characters forbidden by Firebase are
  * escaped into a "\xx" hex format.
