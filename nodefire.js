@@ -142,7 +142,18 @@ NodeFire.resetCacheHitRate = function() {
 };
 
 /**
- * Unescapes a previously interpolated key.
+ * Escapes a string to make it an acceptable Firebase key.
+ * @param {string} key The proposed key to escape.
+ * @return {string} The escaped key.
+ */
+NodeFire.escape = function(key) {
+    return key.toString().replace(/[\\\.\$\#\[\]\/]/g, function(char) {
+      return '\\' + char.charCodeAt(0).toString(16);
+    });
+};
+
+/**
+ * Unescapes a previously escaped (or interpolated) key.
  * @param {string} key The key to unescape.
  * @return {string} The original unescaped key.
  */
@@ -177,9 +188,7 @@ NodeFire.prototype.interpolate = function(string, scope) {
           'Missing or null variable "' + v + '" when expanding NodeFire path "' + string + '"');
       }
     }
-    return value.toString().replace(/[\\\.\$\#\[\]\/]/g, function(char) {
-      return '\\' + char.charCodeAt(0).toString(16);
-    });
+    return NodeFire.escape(value);
   });
   return string;
 };
