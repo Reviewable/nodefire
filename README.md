@@ -222,13 +222,12 @@ NodeFire.prototype.remove = function();
 NodeFire.prototype.push = function(value);
 
 /**
- * Runs a transaction at this reference.
+ * Runs a transaction at this reference.  The transaction is not applied locally first, since this
+ * would be incompatible with a promise's complete-once semantics.
  * @param  {function(value):value} updateFunction A function that takes the current value at this
  *     reference and returns the new value to replace it with.  Return undefined to abort the
  *     transaction, and null to remove the reference.  Be prepared for this function to be called
  *     multiple times in case of contention.
- * @param  {boolean} applyLocally True if you want the effect of the transaction to be visible
- *     locally before it has been confirmed at the server.  Defaults to false.
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */

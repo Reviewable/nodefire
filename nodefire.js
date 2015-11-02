@@ -388,12 +388,22 @@ NodeFire.prototype.push = function(value) {
 NodeFire.prototype.transaction = function(updateFunction) {
   var self = this;
   return new Promise(function(resolve, reject) {
-    var tries = 0, result, wrappedReject = reject;
+    var wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
+    var tries = 0, result, wrappedReject = wrappedRejectNoResult;
     var wrappedUpdateFunction = function() {
-      if (++tries > 100) throw new Error('maxretry');
-      result = updateFunction.apply(this, arguments);
-      wrappedReject = wrapReject(self, 'transaction', result, reject);
-      return result;
+      try {
+        wrappedReject = wrappedRejectNoResult;
+        if (++tries > 100) throw new Error('maxretry');
+        result = updateFunction.apply(this, arguments);
+        wrappedReject = wrapReject(self, 'transaction', result, reject);
+        return result;
+      } catch (e) {
+        // Firebase propagates exceptions thrown by the update function to the top level.  So catch
+        // them here instead, reject the promise, and abort the transaction by returning undefined.
+        // The callback will then try to resolve the promise (seeing an uncommitted transaction with
+        // no error) but it'll be a no-op.
+        wrappedReject(e);
+      }
     };
     function txn() {
       try {
@@ -428,7 +438,7 @@ NodeFire.prototype.transaction = function(updateFunction) {
     // Prefetch the data and keep it "live" during the transaction, to avoid running the
     // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
     // from the server.
-    self.$firebase.on('value', onceTxn, wrapReject(self, 'transaction', reject));
+    self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
   });
 };
 
