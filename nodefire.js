@@ -272,24 +272,30 @@ NodeFire.prototype.child = function(path, scope) {
  */
 NodeFire.prototype.get = function() {
   var self = this;
-  var url = this.toString();
-  if (cache) {
-    if (cache.has(url)) {
-      cacheHits++;
-    } else {
-      cacheMisses++;
-      cache.set(url, this);
-      this.on('value', noopCallback, function() {
-        if (cache) cache.del(url);
-      });
-    }
-  }
+  this.cache();
   return new Promise(function(resolve, reject) {
     reject = wrapReject(self, 'get', reject);
     self.$firebase.once('value', function(snap) {
       resolve(getNormalValue(snap));
     }, reject);
   });
+};
+
+/**
+ * Adds this reference to the cache (if maxCacheSize set) and counts a cache hit or miss.
+ */
+NodeFire.prototype.cache = function() {
+  if (!cache) return;
+  var url = this.toString();
+  if (cache.has(url)) {
+    cacheHits++;
+  } else {
+    cacheMisses++;
+    cache.set(url, this);
+    this.on('value', noopCallback, function() {
+      if (cache) cache.del(url);
+    });
+  }
 };
 
 /**
@@ -432,12 +438,10 @@ NodeFire.prototype.transaction = function(updateFunction) {
       }
     }
     var onceTxn = _.once(txn);
-    if (cache) {
-      if (cache.has(self.toString())) cacheHits++; else cacheMisses++;
-    }
     // Prefetch the data and keep it "live" during the transaction, to avoid running the
     // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
-    // from the server.
+    // from the server.  Also pull it into the cache to speed future transactions at this ref.
+    self.cache();
     self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
   });
 };

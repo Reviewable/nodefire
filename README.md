@@ -179,6 +179,11 @@ NodeFire.prototype.child = function(path, scope);
 NodeFire.prototype.get = function();
 
 /**
+ * Adds this reference to the cache (if maxCacheSize set) and counts a cache hit or miss.
+ */
+NodeFire.prototype.cache = function();
+
+/**
  * Sets the value at this reference.  To set the priority, include a ".priority" attribute on the
  * value.
  * @param {Object || number || string || boolean} value The value to set.
