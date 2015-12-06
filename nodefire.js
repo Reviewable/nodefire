@@ -1,9 +1,8 @@
 'use strict';
 
-if (typeof Promise === 'undefined') require('es6-promise').polyfill();
 var Firebase = require('firebase');
 var FirebaseTokenGenerator = require('firebase-token-generator');
-var _ = require('underscore');
+var _ = require('lodash');
 var url = require('url');
 var LRUCache = require('serialized-lru-cache');
 var co = require('co');
