@@ -392,7 +392,9 @@ NodeFire.prototype.push = function(value) {
  */
 NodeFire.prototype.transaction = function(updateFunction) {
   var self = this;
-  var promise = new Promise(function(resolve, reject) {
+  var fakePromise = {};
+  var promise = fakePromise;
+  promise = new Promise(function(resolve, reject) {
     var wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
     var tries = 0, result, wrappedReject = wrappedRejectNoResult;
     var wrappedUpdateFunction = function() {
@@ -446,6 +448,9 @@ NodeFire.prototype.transaction = function(updateFunction) {
     self.cache();
     self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
   });
+  if (!promise.transaction && fakePromise.transaction) {
+    promise.transaction = fakePromise.transaction;
+  }
   return promise;
 };
 
