@@ -392,7 +392,7 @@ NodeFire.prototype.push = function(value) {
  */
 NodeFire.prototype.transaction = function(updateFunction) {
   var self = this;
-  return new Promise(function(resolve, reject) {
+  var promise = new Promise(function(resolve, reject) {
     var wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
     var tries = 0, result, wrappedReject = wrappedRejectNoResult;
     var wrappedUpdateFunction = function() {
@@ -413,10 +413,13 @@ NodeFire.prototype.transaction = function(updateFunction) {
     function txn() {
       try {
         self.$firebase.transaction(wrappedUpdateFunction, function(error, committed, snap) {
+          promise.transaction = {
+            tries: tries, outcome: error ? 'error' : (committed ? 'commit': 'skip')
+          };
           if (NodeFire.LOG_TRANSACTIONS) {
             console.log(JSON.stringify({txn: {
               tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
-              outcome: error ? 'error' : (committed ? 'commit': 'skip'), value: result
+              outcome: promise.transaction.outcome, value: result
             }}));
           }
           if (error && error.message === 'set') {
@@ -443,6 +446,7 @@ NodeFire.prototype.transaction = function(updateFunction) {
     self.cache();
     self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
   });
+  return promise;
 };
 
 // TODO: add user/password-related methods
