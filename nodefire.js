@@ -392,9 +392,9 @@ NodeFire.prototype.push = function(value) {
  */
 NodeFire.prototype.transaction = function(updateFunction) {
   var self = this;
-  var fakePromise = {};
-  var promise = fakePromise;
-  promise = new Promise(function(resolve, reject) {
+  var startTime = self.now();
+  var metadata = {};
+  var promise = new Promise(function(resolve, reject) {
     var wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
     var tries = 0, result, wrappedReject = wrappedRejectNoResult;
     var wrappedUpdateFunction = function() {
@@ -409,26 +409,31 @@ NodeFire.prototype.transaction = function(updateFunction) {
         // them here instead, reject the promise, and abort the transaction by returning undefined.
         // The callback will then try to resolve the promise (seeing an uncommitted transaction with
         // no error) but it'll be a no-op.
+        metadata.tries = tries;
+        metadata.duration = self.now() - startTime;
+        metadata.outcome = 'error';
         wrappedReject(e);
       }
     };
     function txn() {
       try {
         self.$firebase.transaction(wrappedUpdateFunction, function(error, committed, snap) {
-          promise.transaction = {
-            tries: tries, outcome: error ? 'error' : (committed ? 'commit': 'skip')
-          };
-          if (NodeFire.LOG_TRANSACTIONS) {
-            console.log(JSON.stringify({txn: {
-              tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
-              outcome: promise.transaction.outcome, value: result
-            }}));
-          }
           if (error && error.message === 'set') {
             txn();
             return;
           }
           self.$firebase.off('value', onceTxn);
+          if (!metadata.outcome) {
+            metadata.tries = tries;
+            metadata.duration = self.now() - startTime;
+            metadata.outcome = error ? 'error' : (committed ? 'commit': 'skip');
+          }
+          if (NodeFire.LOG_TRANSACTIONS) {
+            console.log(JSON.stringify({txn: {
+              tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
+              outcome: metadata.outcome, value: result
+            }}));
+          }
           if (error) {
             wrappedReject(error);
           } else if (committed) {
@@ -448,9 +453,7 @@ NodeFire.prototype.transaction = function(updateFunction) {
     self.cache();
     self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
   });
-  if (!promise.transaction && fakePromise.transaction) {
-    promise.transaction = fakePromise.transaction;
-  }
+  promise.transaction = metadata;
   return promise;
 };
 
