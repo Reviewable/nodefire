@@ -392,11 +392,26 @@ NodeFire.prototype.push = function(value) {
  */
 NodeFire.prototype.transaction = function(updateFunction) {
   var self = this;
-  var startTime = self.now();
+  var tries = 0, result;
+  var startTime = self.now(), prefetchDoneTime;
   var metadata = {};
+
+  function fillMetadata(outcome) {
+    if (metadata.outcome) return;
+    metadata.outcome = outcome;
+    metadata.tries = tries;
+    if (prefetchDoneTime) {
+      metadata.prefetchDuration = prefetchDoneTime - startTime;
+      metadata.duration = self.now() - prefetchDoneTime;
+    } else {
+      metadata.duration = self.now() - startTime;
+    }
+  }
+
   var promise = new Promise(function(resolve, reject) {
     var wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
-    var tries = 0, result, wrappedReject = wrappedRejectNoResult;
+    var wrappedReject = wrappedRejectNoResult;
+
     var wrappedUpdateFunction = function() {
       try {
         wrappedReject = wrappedRejectNoResult;
@@ -409,13 +424,13 @@ NodeFire.prototype.transaction = function(updateFunction) {
         // them here instead, reject the promise, and abort the transaction by returning undefined.
         // The callback will then try to resolve the promise (seeing an uncommitted transaction with
         // no error) but it'll be a no-op.
-        metadata.tries = tries;
-        metadata.duration = self.now() - startTime;
-        metadata.outcome = 'error';
+        fillMetadata('error');
         wrappedReject(e);
       }
     };
+
     function txn() {
+      if (!prefetchDoneTime) prefetchDoneTime = self.now();
       try {
         self.$firebase.transaction(wrappedUpdateFunction, function(error, committed, snap) {
           if (error && error.message === 'set') {
@@ -423,11 +438,7 @@ NodeFire.prototype.transaction = function(updateFunction) {
             return;
           }
           self.$firebase.off('value', onceTxn);
-          if (!metadata.outcome) {
-            metadata.tries = tries;
-            metadata.duration = self.now() - startTime;
-            metadata.outcome = error ? 'error' : (committed ? 'commit': 'skip');
-          }
+          fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
           if (NodeFire.LOG_TRANSACTIONS) {
             console.log(JSON.stringify({txn: {
               tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
@@ -453,6 +464,7 @@ NodeFire.prototype.transaction = function(updateFunction) {
     self.cache();
     self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
   });
+
   promise.transaction = metadata;
   return promise;
 };
