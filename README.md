@@ -94,6 +94,16 @@ NodeFire.enableFirebaseLogging = function(enable);
 NodeFire.setCacheSize = function(max);
 
 /**
+ * Sets the maximum number of pinned values to retain in the cache when a host gets disconnected.
+ * By default all values are retained, but if your cache size is high they'll all need to be double-
+ * checked against the Firebase server when the connection comes back.  It may thus be more
+ * economical to drop the least used ones when disconnected.
+ * @param {number} max The maximum number of values from a disconnected host to keep pinned in the
+ *        cache.
+ */
+NodeFire.setCacheSizeForDisconnectedHost = function(max);
+
+/**
  * Gets the current number of values pinned in the cache.
  * @return {number} The current size of the cache.
  */

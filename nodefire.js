@@ -4,11 +4,11 @@ var Firebase = require('firebase');
 var FirebaseTokenGenerator = require('firebase-token-generator');
 var _ = require('lodash');
 var url = require('url');
-var LRUCache = require('serialized-lru-cache');
+var LRUCache = require('lru-cache');
 var co = require('co');
 
-var cache, cacheHits = 0, cacheMisses = 0;
-var serverTimeOffsets = {};
+var cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
+var serverTimeOffsets = {}, serverDisconnects = {};
 
 function noopCallback() {}
 
@@ -16,6 +16,26 @@ function trackTimeOffset(host) {
   new Firebase('https://' + host + '/.info/serverTimeOffset').on('value', function(snap) {
     serverTimeOffsets[host] = snap.val();
   }, _.bind(trackTimeOffset, host));
+}
+
+function trackDisconnect(host) {
+  serverDisconnects[host] = new Firebase('https://' + host + '/.info/connected').on(
+    'value',
+    function(snap) {
+      if (!snap.val()) trimCache(host);
+    }, _.bind(trackDisconnect, host)
+  );
+}
+
+function trimCache(host) {
+  if (!cache || cache.max <= maxCacheSizeForDisconnectedHost) return;
+  var prefix = 'https://' + host + '/';
+  var count = 0;
+  cache.forEach(function(value, key) {
+    if (key.slice(0, prefix.length) !== prefix) return;
+    if (++count <= maxCacheSizeForDisconnectedHost) return;
+    cache.del(key);
+  });
 }
 
 /**
@@ -40,6 +60,7 @@ var NodeFire = function(refOrUrl, scope, host) {
     serverTimeOffsets[host] = 0;
     trackTimeOffset(host);
   }
+  if (!(host in serverDisconnects)) trackDisconnect(host);
 };
 module.exports = NodeFire;
 
@@ -113,6 +134,18 @@ NodeFire.setCacheSize = function(max) {
     if (cache) cache.reset();
     cache = null;
   }
+};
+
+/**
+ * Sets the maximum number of pinned values to retain in the cache when a host gets disconnected.
+ * By default all values are retained, but if your cache size is high they'll all need to be double-
+ * checked against the Firebase server when the connection comes back.  It may thus be more
+ * economical to drop the least used ones when disconnected.
+ * @param {number} max The maximum number of values from a disconnected host to keep pinned in the
+ *        cache.
+ */
+NodeFire.setCacheSizeForDisconnectedHost = function(max) {
+  maxCacheSizeForDisconnectedHost = max;
 };
 
 /**
