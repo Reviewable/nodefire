@@ -276,7 +276,7 @@ NodeFire.prototype.toString = function() {
  * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
  */
 NodeFire.prototype.path = function() {
-  var path = this.$firebase.toString();
+  var path = decodeURIComponent(this.$firebase.toString());
   if (this.$firebase.root) path = path.slice(this.$firebase.root().toString().length - 1);
   return path;
 };
