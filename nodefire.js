@@ -272,6 +272,16 @@ NodeFire.prototype.toString = function() {
 };
 
 /**
+ * Returns just the path component of the reference's URL.
+ * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
+ */
+NodeFire.prototype.path = function() {
+  var path = this.$firebase.toString();
+  if (this.$firebase.root) path = path.slice(this.$firebase.root().toString().length - 1);
+  return path;
+};
+
+/**
  * Creates a new NodeFire object on the same reference, but with an extended interpolation scope.
  * @param  {Object} scope A dictionary of interpolation variables that will be added to (and take
  *     precedence over) the one carried by this NodeFire object.
