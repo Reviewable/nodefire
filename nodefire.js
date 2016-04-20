@@ -75,14 +75,6 @@ var Snapshot = function(snap, nodeFire) {
 };
 
 /**
- * Flag that indicates whether to run in debug mode.  Currently only has an effect on calls to
- *     auth(), and must be set to the desired value before any such calls.  Note that turning on
- *     debug mode will slow down processing of Firebase commands and increase required bandwidth.
- * @type {boolean} True to put the library into debug mode, false otherwise.
- */
-NodeFire.DEBUG = false;
-
-/**
  * Flag that indicates whether to log transactions and the number of tries needed.
  * @type {boolean} True to log metadata about every transaction.
  */
@@ -228,14 +220,12 @@ NodeFire.prototype.interpolate = function(string, scope) {
 // TODO: add onDisconnect
 
 /**
- * Authenticates with Firebase, using either a secret or a custom token.  To enable security rule
- * debugging, set NodeFire.DEBUG to true and pass an authObject into this function.
+ * Authenticates with Firebase, using either a secret or a custom token.
  * @param  {string} secret A secret for the Firebase referenced by this NodeFire object (copy from
  *     the Firebase dashboard).
  * @param  {Object} authObject Optional.  If provided, instead of authenticating with the secret
  *     directly (which disables all security checks), we'll generate a custom token with the auth
- *     value provided here, an expiry far in the future, and the debug flag set if NodeFire.DEBUG is
- *     true.
+ *     value provided here and an expiry far in the future.
  * @return {Promise} A promise that is resolved when the authentication has completed successfully,
  *     and rejected with an error if it failed.
  */
@@ -244,8 +234,7 @@ NodeFire.prototype.auth = function(secret, authObject) {
   if (authObject) {
     // Tokens expire 10 years from now.
     token = new FirebaseTokenGenerator(secret).createToken(
-      authObject, {expires: this.now() + 315360000, debug: NodeFire.DEBUG});
-    if (NodeFire.DEBUG) interceptFirebaseDebugLogs();
+      authObject, {expires: this.now() + 315360000});
   }
   return new Promise(_.bind(function(resolve, reject) {
     this.$firebase.authWithCustomToken(token, function(error, value) {
@@ -681,20 +670,3 @@ function getNormalValue(snap) {
   return value;
 }
 
-function interceptFirebaseDebugLogs() {
-  var originalLog = console.log;
-  var logBuffer = [];
-  console.log = function() {
-    if (arguments.length && /^FIREBASE:/.test(arguments[0])) {
-      var message = Array.prototype.slice.call(arguments).join(' ');
-      if (/^FIREBASE: Attempt to (read|write)/.test(message)) logBuffer = [];
-      logBuffer.push(message);
-      if (/^FIREBASE: (Read|Write) was denied/.test(message)) {
-        originalLog('Firebase permission denied debug log:\n' + logBuffer.join('\n'));
-      }
-      if (/^FIREBASE: (Read|Write) was (allowed|denied)/.test(message)) logBuffer = [];
-    } else {
-      originalLog.apply(this, arguments);
-    }
-  };
-}
