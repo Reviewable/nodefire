@@ -666,10 +666,14 @@ function getNormalRawValue(value) {
     var normalValue = {};
     _.forEach(value, function(item, key) {
       if (!(item === null || _.isUndefined(item))) {
-        normalValue[key] = item;
+        normalValue[key] = getNormalRawValue(item);
       }
     });
     value = normalValue;
+  } else if (_.isObject(value)) {
+    _.forEach(value, function(item, key) {
+      value[key] = getNormalRawValue(item);
+    });
   }
   return value;
 }
