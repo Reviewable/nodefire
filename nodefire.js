@@ -444,11 +444,11 @@ NodeFire.prototype.transaction = function(updateFunction) {
     var wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
     var wrappedReject = wrappedRejectNoResult;
 
-    var wrappedUpdateFunction = function() {
+    var wrappedUpdateFunction = function(value) {
       try {
         wrappedReject = wrappedRejectNoResult;
         if (++tries > 100) throw new Error('maxretry');
-        result = updateFunction.apply(this, arguments);
+        result = updateFunction.call(this, getNormalRawValue(value));
         wrappedReject = wrapReject(self, 'transaction', result, reject);
         return result;
       } catch (e) {
@@ -656,7 +656,12 @@ function wrapReject(nodefire, method, value, reject) {
 }
 
 function getNormalValue(snap) {
-  var value = snap.val();
+  var value = getNormalRawValue(snap.val());
+  if (snap.getPriority() !== null && _.isObject(value)) value['.priority'] = snap.getPriority();
+  return value;
+}
+
+function getNormalRawValue(value) {
   if (_.isArray(value)) {
     var normalValue = {};
     _.forEach(value, function(item, key) {
@@ -666,7 +671,5 @@ function getNormalValue(snap) {
     });
     value = normalValue;
   }
-  if (snap.getPriority() !== null && _.isObject(value)) value['.priority'] = snap.getPriority();
   return value;
 }
-
