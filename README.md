@@ -229,6 +229,12 @@ NodeFire.prototype.push = function(value);
 /**
  * Runs a transaction at this reference.  The transaction is not applied locally first, since this
  * would be incompatible with a promise's complete-once semantics.
+ *
+ * If transactions on a given ref fail with maxretry too often in a short period of time then the
+ * error that's thrown will have `transactionStuck` set to `true`.  There's a bug in the Firebase
+ * SDK that fails to update the local value and will cause a transaction to fail repeatedly; the
+ * only thing you can do in this case is to restart your server.
+ *
  * @param  {function(value):value} updateFunction A function that takes the current value at this
  *     reference and returns the new value to replace it with.  Return undefined to abort the
  *     transaction, and null to remove the reference.  Be prepared for this function to be called
