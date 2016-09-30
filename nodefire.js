@@ -9,8 +9,16 @@ var co = require('co');
 
 var cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
 var serverTimeOffsets = {}, serverDisconnects = {};
+var maxRetryTracker = new LRUCache({max: 500, maxAge: 2 * 60 * 1000});
 
 function noopCallback() {}
+
+function trackMaxRetry(ref, error) {
+  var key = ref.toString();
+  var count = maxRetryTracker.get(key) || 0;
+  maxRetryTracker.set(key, ++count);
+  if (count >= 10) error.transactionStuck = true;
+}
 
 function trackTimeOffset(host) {
   new Firebase('https://' + host + '/.info/serverTimeOffset').on('value', function(snap) {
@@ -415,6 +423,12 @@ NodeFire.prototype.push = function(value) {
 /**
  * Runs a transaction at this reference.  The transaction is not applied locally first, since this
  * would be incompatible with a promise's complete-once semantics.
+ *
+ * If transactions on a given ref fail with maxretry too often in a short period of time then the
+ * error that's thrown will have `transactionStuck` set to `true`.  There's a bug in the Firebase
+ * SDK that fails to update the local value and will cause a transaction to fail repeatedly; the
+ * only thing you can do in this case is to restart your server.
+ *
  * @param  {function(value):value} updateFunction A function that takes the current value at this
  *     reference and returns the new value to replace it with.  Return undefined to abort the
  *     transaction, and null to remove the reference.  Be prepared for this function to be called
@@ -447,7 +461,11 @@ NodeFire.prototype.transaction = function(updateFunction) {
     var wrappedUpdateFunction = function(value) {
       try {
         wrappedReject = wrappedRejectNoResult;
-        if (++tries > 100) throw new Error('maxretry');
+        if (++tries > 25) {
+          var e = new Error('maxretry');
+          trackMaxRetry(self, e);
+          throw e;
+        }
         result = updateFunction.call(this, getNormalRawValue(value));
         wrappedReject = wrapReject(self, 'transaction', result, reject);
         return result;
@@ -468,6 +486,9 @@ NodeFire.prototype.transaction = function(updateFunction) {
           if (error && error.message === 'set') {
             txn();
             return;
+          }
+          if (error && error.message === 'maxretry') {
+            trackMaxRetry(self, error);
           }
           self.$firebase.off('value', onceTxn);
           fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
