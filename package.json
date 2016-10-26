@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "index.js",
   "scripts": {
@@ -22,10 +22,9 @@
   },
   "homepage": "https://github.com/pkaminski/nodefire",
   "engines": {
-    "node": ">=0.12"
+    "node": ">=4.0"
   },
   "dependencies": {
-    "co": "^4.4.0",
     "firebase": "^2.2",
     "firebase-rolling-log": "^0.2.0",
     "firebase-token-generator": "^2.0.0",

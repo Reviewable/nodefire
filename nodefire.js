@@ -5,7 +5,6 @@ var FirebaseTokenGenerator = require('firebase-token-generator');
 var _ = require('lodash');
 var url = require('url');
 var LRUCache = require('lru-cache');
-var co = require('co');
 
 var cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
 var serverTimeOffsets = {}, serverDisconnects = {};
@@ -479,6 +478,7 @@ NodeFire.prototype.transaction = function(updateFunction) {
       }
     };
 
+    var onceTxn;
     function txn() {
       if (!prefetchDoneTime) prefetchDoneTime = self.now();
       try {
@@ -510,7 +510,7 @@ NodeFire.prototype.transaction = function(updateFunction) {
         wrappedReject(e);
       }
     }
-    var onceTxn = _.once(txn);
+    onceTxn = _.once(txn);
     // Prefetch the data and keep it "live" during the transaction, to avoid running the
     // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
     // from the server.  Also pull it into the cache to speed future transactions at this ref.
@@ -541,8 +541,8 @@ function runGenerator(o) {
   var promise;
   if (o instanceof Promise) {
     promise = o;
-  } else if (o && typeof o.next === 'function' && typeof o.throw === 'function') {
-    promise = co(o);
+  } else if (o && typeof o.next === 'function' && typeof o.throw === 'function' && Promise.co) {
+    promise = Promise.co(o);
   }
   if (promise) promise.catch(function(error) {throw error;});
 }
