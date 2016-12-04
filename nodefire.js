@@ -247,7 +247,7 @@ NodeFire.prototype.auth = function(secret, authObject) {
     this.$firebase.authWithCustomToken(token, function(error, value) {
       if (error) reject(error); else resolve(value);
     });
-  }, this));
+  }, this)).catch(noopCallback);
 };
 
 /**
@@ -315,7 +315,7 @@ NodeFire.prototype.get = function() {
     reject = wrapReject(self, 'get', reject);
     self.$firebase.once('value', function(snap) {
       resolve(getNormalValue(snap));
-    }, reject);
+    }, reject).catch(noopCallback);
   });
 };
 
@@ -349,7 +349,7 @@ NodeFire.prototype.set = function(value) {
     reject = wrapReject(self, 'set', value, reject);
     self.$firebase.set(value, function(error) {
       if (error) reject(error); else resolve();
-    });
+    }).catch(noopCallback);
   });
 };
 
@@ -366,7 +366,7 @@ NodeFire.prototype.setPriority = function(priority) {
     reject = wrapReject(self, 'setPriority', priority, reject);
     self.$firebase.setPriority(priority, function(error) {
       if (error) reject(error); else resolve();
-    });
+    }).catch(noopCallback);
   });
 };
 
@@ -383,7 +383,7 @@ NodeFire.prototype.update = function(value) {
     reject = wrapReject(self, 'update', value, reject);
     self.$firebase.update(value, function(error) {
       if (error) reject(error); else resolve();
-    });
+    }).catch(noopCallback);
   });
 };
 
@@ -398,7 +398,7 @@ NodeFire.prototype.remove = function() {
     reject = wrapReject(self, 'remove', reject);
     self.$firebase.remove(function(error) {
       if (error) reject(error); else resolve();
-    });
+    }).catch(noopCallback);
   });
 };
 
@@ -416,6 +416,7 @@ NodeFire.prototype.push = function(value) {
     var ref = self.$firebase.push(value, function(error) {
       if (error) reject(error); else resolve(new NodeFire(ref, self.$scope, self.$host));
     });
+    ref.catch(noopCallback);
   });
 };
 
@@ -505,7 +506,7 @@ NodeFire.prototype.transaction = function(updateFunction) {
           } else {
             resolve();
           }
-        }, false);
+        }, false).catch(noopCallback);
       } catch(e) {
         wrappedReject(e);
       }
@@ -578,7 +579,7 @@ NodeFire.prototype.once = function(eventType, callback, failureCallback, context
   failureCallback = wrapReject(this, 'on', failureCallback);
   this.$firebase.once(eventType, function(snap, previousChildKey) {
     runGenerator(callback.call(this, new Snapshot(snap, self), previousChildKey));
-  }, failureCallback, context);
+  }, failureCallback, context).catch(noopCallback);
 };
 
 /**
