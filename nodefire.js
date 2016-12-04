@@ -416,7 +416,7 @@ NodeFire.prototype.push = function(value) {
     var ref = self.$firebase.push(value, function(error) {
       if (error) reject(error); else resolve(new NodeFire(ref, self.$scope, self.$host));
     });
-    ref.catch(noopCallback);
+    if (ref.catch) ref.catch(noopCallback);
   });
 };
 
