@@ -462,13 +462,13 @@ NodeFire.prototype.transaction = function(updateFunction) {
           numConsecutiveEqualInputValues = 0;
           lastInputValue = clone(value);
         }
-        if (numConsecutiveEqualInputValues >= 4) {
+        if (numConsecutiveEqualInputValues >= 7) {
           // We keep retrying the transaction with the same input value, and reconnecting didn't
           // help... Bail, this is getting nowhere.
           var e = new Error('stuck');
           e.transactionStuck = true;
           throw e;
-        } else if (numConsecutiveEqualInputValues >= 2) {
+        } else if (numConsecutiveEqualInputValues >= 5) {
           // Seeing the same input value repeatedly, so try to force Firebase to resync its state
           // by bouncing the connection.
           Firebase.goOffline();
