@@ -5,19 +5,12 @@ var FirebaseTokenGenerator = require('firebase-token-generator');
 var _ = require('lodash');
 var url = require('url');
 var LRUCache = require('lru-cache');
+var clone = require('clone');
 
 var cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
 var serverTimeOffsets = {}, serverDisconnects = {};
-var maxRetryTracker = new LRUCache({max: 500, maxAge: 2 * 60 * 1000});
 
 function noopCallback() {}
-
-function trackMaxRetry(ref, error) {
-  var key = ref.toString();
-  var count = maxRetryTracker.get(key) || 0;
-  maxRetryTracker.set(key, ++count);
-  if (count >= 10) error.transactionStuck = true;
-}
 
 function trackTimeOffset(host) {
   new Firebase('https://' + host + '/.info/serverTimeOffset').on('value', function(snap) {
@@ -457,15 +450,31 @@ NodeFire.prototype.transaction = function(updateFunction) {
   var promise = new Promise(function(resolve, reject) {
     var wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
     var wrappedReject = wrappedRejectNoResult;
+    var lastInputValue;
+    var numConsecutiveEqualInputValues = 0;
 
     var wrappedUpdateFunction = function(value) {
       try {
         wrappedReject = wrappedRejectNoResult;
-        if (++tries > 25) {
-          var e = new Error('maxretry');
-          trackMaxRetry(self, e);
-          throw e;
+        if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
+          numConsecutiveEqualInputValues++;
+        } else {
+          numConsecutiveEqualInputValues = 0;
+          lastInputValue = clone(value);
         }
+        if (numConsecutiveEqualInputValues >= 4) {
+          // We keep retrying the transaction with the same input value, and reconnecting didn't
+          // help... Bail, this is getting nowhere.
+          var e = new Error('stuck');
+          e.transactionStuck = true;
+          throw e;
+        } else if (numConsecutiveEqualInputValues >= 2) {
+          // Seeing the same input value repeatedly, so try to force Firebase to resync its state
+          // by bouncing the connection.
+          Firebase.goOffline();
+          Firebase.goOnline();
+        }
+        if (++tries > 25) throw new Error('maxretry');
         result = updateFunction.call(this, getNormalRawValue(value));
         wrappedReject = wrapReject(self, 'transaction', result, reject);
         return result;
@@ -484,12 +493,9 @@ NodeFire.prototype.transaction = function(updateFunction) {
       if (!prefetchDoneTime) prefetchDoneTime = self.now();
       try {
         self.$firebase.transaction(wrappedUpdateFunction, function(error, committed, snap) {
-          if (error && error.message === 'set') {
+          if (error && (error.message === 'set' || error.message === 'disconnect')) {
             txn();
             return;
-          }
-          if (error && error.message === 'maxretry') {
-            trackMaxRetry(self, error);
           }
           self.$firebase.off('value', onceTxn);
           fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
