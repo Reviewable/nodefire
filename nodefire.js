@@ -459,7 +459,7 @@ NodeFire.prototype.transaction = function(updateFunction, options) {
     var wrappedUpdateFunction = function(value) {
       try {
         wrappedReject = wrappedRejectNoResult;
-        if (options.detectStuck) {
+        if (options && options.detectStuck) {
           if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
             numConsecutiveEqualInputValues++;
           } else {
