@@ -417,19 +417,22 @@ NodeFire.prototype.push = function(value) {
  * Runs a transaction at this reference.  The transaction is not applied locally first, since this
  * would be incompatible with a promise's complete-once semantics.
  *
- * If transactions on a given ref fail with maxretry too often in a short period of time then the
- * error that's thrown will have `transactionStuck` set to `true`.  There's a bug in the Firebase
- * SDK that fails to update the local value and will cause a transaction to fail repeatedly; the
- * only thing you can do in this case is to restart your server.
+ * There's a bug in the Firebase SDK that fails to update the local value and will cause a
+ * transaction to fail repeatedly until it fails with maxretry.  If you specify the detectStuck
+ * option then an error with the message 'stuck' will be thrown earlier so that you can try to work
+ * around the issue.
  *
  * @param  {function(value):value} updateFunction A function that takes the current value at this
  *     reference and returns the new value to replace it with.  Return undefined to abort the
  *     transaction, and null to remove the reference.  Be prepared for this function to be called
  *     multiple times in case of contention.
+ * @param  {Object} options An options objects that may include the following properties:
+ *     {number} detectStuck Throw a 'stuck' exception after the update function's input value has
+ *         remained unchanged this many times.
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */
-NodeFire.prototype.transaction = function(updateFunction) {
+NodeFire.prototype.transaction = function(updateFunction, options) {
   var self = this;
   var tries = 0, result;
   var startTime = self.now(), prefetchDoneTime;
@@ -456,23 +459,14 @@ NodeFire.prototype.transaction = function(updateFunction) {
     var wrappedUpdateFunction = function(value) {
       try {
         wrappedReject = wrappedRejectNoResult;
-        if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
-          numConsecutiveEqualInputValues++;
-        } else {
-          numConsecutiveEqualInputValues = 0;
-          lastInputValue = clone(value);
-        }
-        if (numConsecutiveEqualInputValues >= 9) {
-          // We keep retrying the transaction with the same input value, and reconnecting didn't
-          // help... Bail, this is getting nowhere.
-          var e = new Error('stuck');
-          e.transactionStuck = true;
-          throw e;
-        } else if (numConsecutiveEqualInputValues >= 5 && numConsecutiveEqualInputValues % 2) {
-          // Seeing the same input value repeatedly, so try to force Firebase to resync its state
-          // by bouncing the connection.
-          Firebase.goOffline();
-          Firebase.goOnline();
+        if (options.detectStuck) {
+          if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
+            numConsecutiveEqualInputValues++;
+          } else {
+            numConsecutiveEqualInputValues = 0;
+            lastInputValue = clone(value);
+          }
+          if (numConsecutiveEqualInputValues >= options.detectStuck) throw new Error('stuck');
         }
         if (++tries > 25) throw new Error('maxretry');
         result = updateFunction.call(this, getNormalRawValue(value));
