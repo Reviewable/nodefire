@@ -428,7 +428,9 @@ NodeFire.prototype.push = function(value) {
  *     multiple times in case of contention.
  * @param  {Object} options An options objects that may include the following properties:
  *     {number} detectStuck Throw a 'stuck' exception after the update function's input value has
- *         remained unchanged this many times.
+ *         remained unchanged this many times.  Defaults to 0 (turned off).
+ *     {boolean} prefetchValue Fetch and keep pinned the value referenced by the transaction while
+ *         the transaction is in progress.  Defaults to true.
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */
@@ -437,6 +439,8 @@ NodeFire.prototype.transaction = function(updateFunction, options) {
   var tries = 0, result;
   var startTime = self.now(), prefetchDoneTime;
   var metadata = {};
+  options = options || {};
+  if (options.prefetchValue === undefined) options.prefetchValue = true;
 
   function fillMetadata(outcome) {
     if (metadata.outcome) return;
@@ -459,7 +463,7 @@ NodeFire.prototype.transaction = function(updateFunction, options) {
     var wrappedUpdateFunction = function(value) {
       try {
         wrappedReject = wrappedRejectNoResult;
-        if (options && options.detectStuck) {
+        if (options.detectStuck) {
           if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
             numConsecutiveEqualInputValues++;
           } else {
@@ -491,7 +495,7 @@ NodeFire.prototype.transaction = function(updateFunction, options) {
             txn();
             return;
           }
-          self.$firebase.off('value', onceTxn);
+          if (options.prefetchValue) self.$firebase.off('value', onceTxn);
           fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
           if (NodeFire.LOG_TRANSACTIONS) {
             console.log(JSON.stringify({txn: {
@@ -512,11 +516,15 @@ NodeFire.prototype.transaction = function(updateFunction, options) {
       }
     }
     onceTxn = _.once(txn);
-    // Prefetch the data and keep it "live" during the transaction, to avoid running the
-    // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
-    // from the server.  Also pull it into the cache to speed future transactions at this ref.
-    self.cache();
-    self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
+    if (options.prefetchValue) {
+      // Prefetch the data and keep it "live" during the transaction, to avoid running the
+      // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative data
+      // from the server.  Also pull it into the cache to speed future transactions at this ref.
+      self.cache();
+      self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
+    } else {
+      onceTxn();
+    }
   });
 
   promise.transaction = metadata;

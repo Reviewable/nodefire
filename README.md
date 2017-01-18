@@ -243,7 +243,9 @@ NodeFire.prototype.push = function(value);
  *     multiple times in case of contention.
  * @param  {Object} options An options objects that may include the following properties:
  *     {number} detectStuck Throw a 'stuck' exception after the update function's input value has
- *         remained unchanged this many times.
+ *         remained unchanged this many times.  Defaults to 0 (turned off).
+ *     {boolean} prefetchValue Fetch and keep pinned the value referenced by the transaction while
+ *         the transaction is in progress.  Defaults to true.
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */
