@@ -473,7 +473,7 @@ class NodeFire {
    */
   once(eventType, callback, failureCallback, context) {
     failureCallback = wrapReject(this, 'on', failureCallback);
-    this.$firebase.once(eventType, (snap, previousChildKey) => {
+    this.$firebase.once(eventType, function (snap, previousChildKey) {
       runGenerator(callback.call(this, new Snapshot(snap, this), previousChildKey));
     }, failureCallback, context).catch(noopCallback);
   }
@@ -633,7 +633,7 @@ wrapNodeFire('ref');
 // call to off().
 function captureCallback(nodeFire, callback) {
   callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || [];
-  const nodeFireCallback = (snap, previousChildKey) => {
+  const nodeFireCallback = function(snap, previousChildKey) {
     runGenerator(callback.call(this, new Snapshot(snap, nodeFire), previousChildKey));
   };
   callback.$nodeFireCallbacks.push(nodeFireCallback);
