@@ -332,6 +332,8 @@ class NodeFire {
    *         remained unchanged this many times.  Defaults to 0 (turned off).
    *     {boolean} prefetchValue Fetch and keep pinned the value referenced by the transaction while
    *         the transaction is in progress.  Defaults to true.
+   *     {number} timeout A number of milliseconds after which to time out the transaction and
+   *         reject the promise with 'timeout'.
    * @return {Promise} A promise that is resolved with the (normalized) committed value if the
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
@@ -359,13 +361,14 @@ class NodeFire {
     const promise = new Promise((resolve, reject) => {
       const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
       let wrappedReject = wrappedRejectNoResult;
+      let aborted;
       let lastInputValue;
       let numConsecutiveEqualInputValues = 0;
 
       function wrappedUpdateFunction(value) {
-        // jshint validthis:true
         try {
           wrappedReject = wrappedRejectNoResult;
+          if (aborted) return;  // transaction otherwise aborted and promise settled, just stop
           if (options.detectStuck) {
             if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
               numConsecutiveEqualInputValues++;
@@ -376,7 +379,7 @@ class NodeFire {
             if (numConsecutiveEqualInputValues >= options.detectStuck) throw new Error('stuck');
           }
           if (++tries > 25) throw new Error('maxretry');
-          result = updateFunction.call(this, getNormalRawValue(value));
+          result = updateFunction(getNormalRawValue(value));
           wrappedReject = wrapReject(self, 'transaction', result, reject);
           return result;
         } catch (e) {
@@ -389,7 +392,7 @@ class NodeFire {
         }
       }
 
-      let onceTxn;
+      let onceTxn, timeoutId;
       function txn() {
         if (!prefetchDoneTime) prefetchDoneTime = self.now();
         try {
@@ -398,6 +401,7 @@ class NodeFire {
               txn();
               return;
             }
+            if (options.timeout) clearTimeout(timeoutId);
             if (options.prefetchValue) self.$firebase.off('value', onceTxn);
             fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
             if (NodeFire.LOG_TRANSACTIONS) {
@@ -417,6 +421,12 @@ class NodeFire {
         } catch(e) {
           wrappedReject(e);
         }
+      }
+      if (options.timeout) {
+        timeoutId = setTimeout(() => {
+          aborted = true;
+          reject(new Error('timeout'));
+        }, options.timeout);
       }
       if (options.prefetchValue) {
         // Prefetch the data and keep it "live" during the transaction, to avoid running the

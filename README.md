@@ -252,6 +252,8 @@ NodeFire.prototype.push = function(value);
  *         remained unchanged this many times.  Defaults to 0 (turned off).
  *     {boolean} prefetchValue Fetch and keep pinned the value referenced by the transaction while
  *         the transaction is in progress.  Defaults to true.
+ *     {number} timeout A number of milliseconds after which to time out the transaction and
+ *         reject the promise with 'timeout'.
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */
