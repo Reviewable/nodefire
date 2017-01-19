@@ -186,6 +186,12 @@ NodeFire.prototype.get = function();
 NodeFire.prototype.cache = function();
 
 /**
+ * Removes this reference from the cache (if maxCacheSize is set).
+ * @return True if the reference was cached, false otherwise.
+ */
+NodeFire.prototype.uncache = function();
+
+/**
  * Sets the value at this reference.  To set the priority, include a ".priority" attribute on the
  * value.
  * @param {Object || number || string || boolean} value The value to set.
