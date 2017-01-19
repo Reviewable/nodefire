@@ -2,10 +2,6 @@
 # yarn lockfile v1
 
 
-clone@^2.1.0:
-  version "2.1.0"
-  resolved "https://registry.yarnpkg.com/clone/-/clone-2.1.0.tgz#9c715bfbd39aa197c8ee0f8e65c3912ba34f8cd6"
-
 faye-websocket@>=0.6.0:
   version "0.11.0"
   resolved "https://registry.yarnpkg.com/faye-websocket/-/faye-websocket-0.11.0.tgz#d9ccf0e789e7db725d74bc4877d23aa42972ac50"

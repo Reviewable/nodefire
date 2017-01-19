@@ -1,8 +1,11 @@
 {
   "name": "nodefire",
-  "version": "0.8.3",
+  "version": "0.9.0-1",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "index.js",
+  "engines": {
+    "node": ">=4.0"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -21,11 +24,7 @@
     "url": "https://github.com/pkaminski/nodefire/issues"
   },
   "homepage": "https://github.com/pkaminski/nodefire",
-  "engines": {
-    "node": ">=4.0"
-  },
   "dependencies": {
-    "clone": "^2.1.0",
     "firebase": "^2.2",
     "firebase-rolling-log": "^0.2.0",
     "firebase-token-generator": "^2.0.0",
