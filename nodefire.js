@@ -433,7 +433,7 @@ class NodeFire {
         if (options.timeout) {
           timeoutId = setTimeout(() => {
             aborted = true;
-            reject(new Error('timeout'));
+            wrappedReject(new Error('timeout'));
           }, options.timeout);
         }
         if (options.prefetchValue || options.prefetchValue === undefined) {
