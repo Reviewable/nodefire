@@ -7,7 +7,8 @@ const url = require('url');
 const LRUCache = require('lru-cache');
 
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
-let serverTimeOffsets = {}, serverDisconnects = {};
+const serverTimeOffsets = {}, serverDisconnects = {};
+const operationInterceptors = [];
 
 
 /**
@@ -57,12 +58,18 @@ delegateSnapshot('exportVal');
  * 1) Most methods return promises, which you use instead of callbacks.
  * 2) Each NodeFire object has a scope dictionary associated with it that's used to interpolate any
  *    path used in a call.
+ *
+ * Every method that returns a promise also accepts an options object as the last argument.  One
+ * standard option is `timeout`, which will cause an operation to time out after the given number of
+ * milliseconds.  Other operation-specific options are described in their respective doc comments.
  */
 // jshint latedef:false
 class NodeFire {
 // jshint latedef:nofunc
 
-  /*
+  /**
+   * Creates a new NodeFire wrapper around a raw Firebase reference.
+   *
    * @param {string || Firebase} refOrUrl The Firebase URL (or Firebase reference instance) that
    *     this object will represent.
    * @param {Object} scope Optional dictionary that will be used for interpolating paths.
@@ -124,18 +131,17 @@ class NodeFire {
    * @return {Promise} A promise that is resolved when the authentication has completed
    *     successfully, and rejected with an error if it failed.
    */
-  auth(secret, authObject) {
+  auth(secret, authObject, options) {
     let token = secret;
     if (authObject) {
       // Tokens expire 10 years from now.
       token = new FirebaseTokenGenerator(secret).createToken(
         authObject, {expires: this.now() + 315360000});
     }
-    return new Promise((resolve, reject) => {
-      this.$firebase.authWithCustomToken(token, (error, value) => {
-        if (error) reject(error); else resolve(value);
-      });
-    }).catch(noopCallback);
+    return invoke(
+      {ref: this, method: 'auth', args: [secret, authObject]}, options,
+      options => this.$firebase.authWithCustomToken(token)
+    );
   }
 
   /**
@@ -143,8 +149,8 @@ class NodeFire {
    * @return {Promise} A resolved promise (for consistency, since unauthentication is immediate).
    */
   unauth() {
-    this.$firebase.unauth();
-    return Promise.resolved(null);
+    return invoke(
+      {ref: this, method: 'unauth', args: []}, null, options => this.$firebase.unauth());
   }
 
   /**
@@ -191,19 +197,19 @@ class NodeFire {
 
   /**
    * Gets this reference's current value from Firebase, and inserts it into the cache if a
-   * maxCacheSize was set.
+   * maxCacheSize was set and the `cache` option is not false.
    * @return {Promise} A promise that is resolved to the reference's value, or rejected with an
    *     error.  The value returned is normalized: arrays are converted to objects, and the value's
    *     priority (if any) is set on a ".priority" attribute if the value is an object.
    */
-  get() {
-    this.cache();
-    return new Promise((resolve, reject) => {
-      reject = wrapReject(this, 'get', reject);
-      this.$firebase.once('value', snap => {
-        resolve(getNormalValue(snap));
-      }, reject).catch(noopCallback);
-    });
+  get(options) {
+    return invoke(
+      {ref: this, method: 'get', args: []}, options,
+      options => {
+        if (options.cache === undefined || options.cache) this.cache();
+        return this.$firebase.once('value').then(snap => getNormalValue(snap));
+      }
+    );
   }
 
   /**
@@ -242,13 +248,11 @@ class NodeFire {
    * @returns {Promise} A promise that is resolved when the value has been set, or rejected with an
    *     error.
    */
-  set(value) {
-    return new Promise((resolve, reject) => {
-      reject = wrapReject(this, 'set', value, reject);
-      this.$firebase.set(value, error => {
-        if (error) reject(error); else resolve();
-      }).catch(noopCallback);
-    });
+  set(value, options) {
+    return invoke(
+      {ref: this, method: 'set', args: [value]}, options,
+      options => this.$firebase.set(value)
+    );
   }
 
   /**
@@ -258,13 +262,11 @@ class NodeFire {
    * @returns {Promise} A promise that is resolved when the priority has been set, or rejected with
    *     an error.
    */
-  setPriority(priority) {
-    return new Promise((resolve, reject) => {
-      reject = wrapReject(this, 'setPriority', priority, reject);
-      this.$firebase.setPriority(priority, error => {
-        if (error) reject(error); else resolve();
-      }).catch(noopCallback);
-    });
+  setPriority(priority, options) {
+    return invoke(
+      {ref: this, method: 'setPriority', args: [priority]}, options,
+      options => this.$firebase.setPriority(priority)
+    );
   }
 
   /**
@@ -274,13 +276,11 @@ class NodeFire {
    * @return {Promise} A promise that is resolved when the value has been updated, or rejected with
    *     an error.
    */
-  update(value) {
-    return new Promise((resolve, reject) => {
-      reject = wrapReject(this, 'update', value, reject);
-      this.$firebase.update(value, error => {
-        if (error) reject(error); else resolve();
-      }).catch(noopCallback);
-    });
+  update(value, options) {
+    return invoke(
+      {ref: this, method: 'update', args: [value]}, options,
+      options => this.$firebase.update(value)
+    );
   }
 
   /**
@@ -288,13 +288,11 @@ class NodeFire {
    * @return {Promise} A promise that is resolved when the value has been removed, or rejected with
    *     an error.
    */
-  remove() {
-    return new Promise((resolve, reject) => {
-      reject = wrapReject(this, 'remove', reject);
-      this.$firebase.remove(error => {
-        if (error) reject(error); else resolve();
-      }).catch(noopCallback);
-    });
+  remove(options) {
+    return invoke(
+      {ref: this, method: 'remove', args: []}, options,
+      options => this.$firebase.remove()
+    );
   }
 
   /**
@@ -304,14 +302,15 @@ class NodeFire {
    * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
-  push(value) {
-    return new Promise((resolve, reject) => {
-      reject = wrapReject(this, 'push', value, reject);
-      const ref = this.$firebase.push(value, error => {
-        if (error) reject(error); else resolve(new NodeFire(ref, this.$scope, this.$host));
+  push(value, options) {
+    if (value === undefined) {
+      return new NodeFire(this.$firebase.push(), this.$scope, this.$host);
+    } else {
+      return invoke({ref: this, method: 'push', args: [value]}, options, options => {
+        const ref = this.$firebase.push(value);
+        return ref.then(() => new NodeFire(ref, this.$scope, this.$host));
       });
-      if (ref.catch) ref.catch(noopCallback);
-    });
+    }
   }
 
   /**
@@ -344,7 +343,6 @@ class NodeFire {
     let prefetchDoneTime;
     const metadata = {};
     options = options || {};
-    if (options.prefetchValue === undefined) options.prefetchValue = true;
 
     function fillMetadata(outcome) {
       if (metadata.outcome) return;
@@ -358,93 +356,102 @@ class NodeFire {
       }
     }
 
-    const promise = new Promise((resolve, reject) => {
-      const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
-      let wrappedReject = wrappedRejectNoResult;
-      let aborted;
-      let lastInputValue;
-      let numConsecutiveEqualInputValues = 0;
+    const op = {ref: this, method: 'transaction', args: [updateFunction]};
 
-      function wrappedUpdateFunction(value) {
-        try {
-          wrappedReject = wrappedRejectNoResult;
-          if (aborted) return;  // transaction otherwise aborted and promise settled, just stop
-          if (options.detectStuck) {
-            if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
-              numConsecutiveEqualInputValues++;
-            } else {
-              numConsecutiveEqualInputValues = 0;
-              lastInputValue = _.cloneDeep(value);
+    return Promise.all(
+      _.map(
+        operationInterceptors,
+        interceptor => Promise.resolve(interceptor(op, options))
+      )
+    ).then(() => {
+      const promise = new Promise((resolve, reject) => {
+        const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
+        let wrappedReject = wrappedRejectNoResult;
+        let aborted;
+        let lastInputValue;
+        let numConsecutiveEqualInputValues = 0;
+
+        function wrappedUpdateFunction(value) {
+          try {
+            wrappedReject = wrappedRejectNoResult;
+            if (aborted) return;  // transaction otherwise aborted and promise settled, just stop
+            if (options.detectStuck) {
+              if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
+                numConsecutiveEqualInputValues++;
+              } else {
+                numConsecutiveEqualInputValues = 0;
+                lastInputValue = _.cloneDeep(value);
+              }
+              if (numConsecutiveEqualInputValues >= options.detectStuck) {
+                throw new Error('stuck' + (value === null ? ' (null)' : ''));
+              }
             }
-            if (numConsecutiveEqualInputValues >= options.detectStuck) {
-              throw new Error('stuck' + (value === null ? ' (null)' : ''));
-            }
+            if (++tries > 25) throw new Error('maxretry');
+            result = updateFunction(getNormalRawValue(value));
+            wrappedReject = wrapReject(self, 'transaction', result, reject);
+            return result;
+          } catch (e) {
+            // Firebase propagates exceptions thrown by the update function to the top level.  So
+            // catch them here instead, reject the promise, and abort the transaction by returning
+            // undefined.  The callback will then try to resolve the promise (seeing an uncommitted
+            // transaction with no error) but it'll be a no-op.
+            fillMetadata('error');
+            wrappedReject(e);
           }
-          if (++tries > 25) throw new Error('maxretry');
-          result = updateFunction(getNormalRawValue(value));
-          wrappedReject = wrapReject(self, 'transaction', result, reject);
-          return result;
-        } catch (e) {
-          // Firebase propagates exceptions thrown by the update function to the top level.  So
-          // catch them here instead, reject the promise, and abort the transaction by returning
-          // undefined.  The callback will then try to resolve the promise (seeing an uncommitted
-          // transaction with no error) but it'll be a no-op.
-          fillMetadata('error');
-          wrappedReject(e);
         }
-      }
 
-      let onceTxn, timeoutId;
-      function txn() {
-        if (!prefetchDoneTime) prefetchDoneTime = self.now();
-        try {
-          self.$firebase.transaction(wrappedUpdateFunction, (error, committed, snap) => {
-            if (error && (error.message === 'set' || error.message === 'disconnect')) {
-              txn();
-              return;
-            }
-            if (options.timeout) clearTimeout(timeoutId);
-            if (options.prefetchValue) self.$firebase.off('value', onceTxn);
-            fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
-            if (NodeFire.LOG_TRANSACTIONS) {
-              console.log(JSON.stringify({txn: {
-                tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
-                outcome: metadata.outcome, value: result
-              }}));
-            }
-            if (error) {
-              wrappedReject(error);
-            } else if (committed) {
-              resolve(getNormalValue(snap));
-            } else {
-              resolve();
-            }
-          }, false).catch(noopCallback);
-        } catch(e) {
-          wrappedReject(e);
+        let onceTxn, timeoutId;
+        function txn() {
+          if (!prefetchDoneTime) prefetchDoneTime = self.now();
+          try {
+            self.$firebase.transaction(wrappedUpdateFunction, (error, committed, snap) => {
+              if (error && (error.message === 'set' || error.message === 'disconnect')) {
+                txn();
+                return;
+              }
+              if (timeoutId) clearTimeout(timeoutId);
+              if (onceTxn) self.$firebase.off('value', onceTxn);
+              fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
+              if (NodeFire.LOG_TRANSACTIONS) {
+                console.log(JSON.stringify({txn: {
+                  tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
+                  outcome: metadata.outcome, value: result
+                }}));
+              }
+              if (error) {
+                wrappedReject(error);
+              } else if (committed) {
+                resolve(getNormalValue(snap));
+              } else {
+                resolve();
+              }
+            }, false).catch(noopCallback);
+          } catch(e) {
+            wrappedReject(e);
+          }
         }
-      }
-      if (options.timeout) {
-        timeoutId = setTimeout(() => {
-          aborted = true;
-          reject(new Error('timeout'));
-        }, options.timeout);
-      }
-      if (options.prefetchValue) {
-        // Prefetch the data and keep it "live" during the transaction, to avoid running the
-        // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
-        // data from the server.  Also pull it into the cache to speed future transactions at this
-        // ref.
-        self.cache();
-        onceTxn = _.once(txn);
-        self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
-      } else {
-        txn();
-      }
+        if (options.timeout) {
+          timeoutId = setTimeout(() => {
+            aborted = true;
+            reject(new Error('timeout'));
+          }, options.timeout);
+        }
+        if (options.prefetchValue || options.prefetchValue === undefined) {
+          // Prefetch the data and keep it "live" during the transaction, to avoid running the
+          // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
+          // data from the server.  Also pull it into the cache to speed future transactions at this
+          // ref.
+          self.cache();
+          onceTxn = _.once(txn);
+          self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
+        } else {
+          txn();
+        }
+      });
+
+      promise.transaction = metadata;
+      return promise;
     });
-
-    promise.transaction = metadata;
-    return promise;
   }
 
   /**
@@ -469,18 +476,6 @@ class NodeFire {
   }
 
   /**
-   * Listens for exactly one event of the given event type, then stops listening.  Works the same as
-   * the Firebase method, except that the snapshot passed into the callback will be wrapped like for
-   * the on() method.
-   */
-  once(eventType, callback, failureCallback, context) {
-    failureCallback = wrapReject(this, 'on', failureCallback);
-    this.$firebase.once(eventType, function (snap, previousChildKey) {
-      runGenerator(callback.call(this, new Snapshot(snap, this), previousChildKey));
-    }, failureCallback, context).catch(noopCallback);
-  }
-
-  /**
    * Generates a unique string that can be used as a key in Firebase.
    * @return {string} A unique string that satisfies Firebase's key syntax constraints.
    */
@@ -497,7 +492,7 @@ class NodeFire {
   }
 
   /**
-   * Turn Firebase low-level connection logging on or off.
+   * Turns Firebase low-level connection logging on or off.
    * @param {boolean | ROLLING} enable Whether to enable or disable logging, or enable rolling logs.
    *        Rolling logs can only be enabled once; any further calls to enableFirebaseLogging will
    *        disable them permanently.
@@ -511,6 +506,19 @@ class NodeFire {
     } else {
       Firebase.enableLogging(enable);
     }
+  }
+
+  /**
+   * Adds an intercepting callback before all NodeFire database operations.  This callback can
+   * modify the operation's options or block it while performing other work.
+   * @param {Function} callback The callback to invoke before each operation.  It will be passed two
+   *     arguments: an operation descriptor ({ref, method, args}) and an options object.  The
+   *     descriptor is read-only but the options can be modified.  The callback can return any value
+   *     (which will be ignored) or a promise, to block execution of the operation (but not other
+   *     interceptors) until the promise settles.
+   */
+  static interceptOperations(callback) {
+    operationInterceptors.push(callback);
   }
 
   /**
@@ -735,6 +743,36 @@ function getNormalRawValue(value) {
     });
   }
   return value;
+}
+
+function invoke(op, options, fn) {
+  options = options || {};
+  return Promise.all(
+    _.map(
+      operationInterceptors,
+      interceptor => Promise.resolve(interceptor(op, options))
+    )
+  ).then(() => {
+    const promises = [];
+    let timeoutId;
+    if (options.timeout) promises.push(new Promise(resolve => {
+      timeoutId = setTimeout(() => {return Promise.reject(new Error('timeout'));}, options.timeout);
+    }));
+    promises.push(Promise.resolve(fn(options)).then(result => {
+      if (timeoutId) clearTimeout(timeoutId);
+      return result;
+    }));
+    return Promise.race(promises).catch(e => {
+      if (timeoutId) clearTimeout(timeoutId);
+      e.message = 'Firebase: ' + e.message;
+      e.firebase = {
+        ref: op.ref.toString(), method: op.method,
+        args: _.map(
+          op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg)
+      };
+      return Promise.reject(e);
+    });
+  });
 }
 
 module.exports = NodeFire;

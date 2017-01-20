@@ -45,29 +45,38 @@ This is reproduced from the source code, which is authoritative.
  * 2) Each NodeFire object has a scope dictionary associated with it that's used to interpolate any
  *    path used in a call.
  *
+ * Every method that returns a promise also accepts an options object as the last argument.  One
+ * standard option is `timeout`, which will cause an operation to time out after the given number of
+ * milliseconds.  Other operation-specific options are described in their respective doc comments.
+ */
+class NodeFire;
+
+/**
+ * Creates a new NodeFire wrapper around a raw Firebase reference.
+ *
  * @param {string || Firebase} refOrUrl The Firebase URL (or Firebase reference instance) that this
  *     object will represent.
  * @param {Object} scope Optional dictionary that will be used for interpolating paths.
  * @param {string} host For internal use only, do not pass.
  */
-module.exports = function NodeFire(refOrUrl, scope, host);
+constructor(refOrUrl, scope, host)
 
 /**
  * Flag that indicates whether to log transactions and the number of tries needed.
  * @type {boolean} True to log metadata about every transaction.
  */
-NodeFire.LOG_TRANSACTIONS = false;
+static LOG_TRANSACTIONS = false
 
 /**
  * A special constant that you can pass to enableFirebaseLogging to keep a rolling buffer of
  * Firebase logs without polluting the console, to be grabbed and saved only when needed.
  */
-NodeFire.ROLLING = {};
+static ROLLING
 
 /* Some static methods copied over from the Firebase class. */
-NodeFire.goOffline = Firebase.goOffline;
-NodeFire.goOnline = Firebase.goOnline;
-NodeFire.ServerValue = Firebase.ServerValue;
+static goOffline()
+static goOnline()
+static ServerValue
 
 /**
  * Turn Firebase low-level connection logging on or off.
@@ -78,14 +87,25 @@ NodeFire.ServerValue = Firebase.ServerValue;
  *          https://github.com/mikelehen/firebase-rolling-log for details).  Otherwise returns
  *          nothing.
  */
-NodeFire.enableFirebaseLogging = function(enable);
+static enableFirebaseLogging(enable)
+
+/**
+ * Adds an intercepting callback before all NodeFire database operations.  This callback can
+ * modify the operation's options or block it while performing other work.
+ * @param {Function} callback The callback to invoke before each operation.  It will be passed two
+ *     arguments: an operation descriptor ({ref, method, args}) and an options object.  The
+ *     descriptor is read-only but the options can be modified.  The callback can return any value
+ *     (which will be ignored) or a promise, to block execution of the operation (but not other
+ *     interceptors) until the promise settles.
+ */
+static interceptOperations(callback)
 
 /**
  * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not used
  * unless you set a non-zero maximum.
  * @param {number} max The maximum number of values to keep pinned in the cache.
  */
-NodeFire.setCacheSize = function(max);
+static setCacheSize(max)
 
 /**
  * Sets the maximum number of pinned values to retain in the cache when a host gets disconnected.
@@ -95,13 +115,13 @@ NodeFire.setCacheSize = function(max);
  * @param {number} max The maximum number of values from a disconnected host to keep pinned in the
  *        cache.
  */
-NodeFire.setCacheSizeForDisconnectedHost = function(max);
+static setCacheSizeForDisconnectedHost(max)
 
 /**
  * Gets the current number of values pinned in the cache.
  * @return {number} The current size of the cache.
  */
-NodeFire.getCacheCount = function();
+static getCacheCount()
 
 /**
  * Gets the current cache hit rate.  This is very approximate, as it's only counted for get() and
@@ -109,16 +129,12 @@ NodeFire.getCacheCount = function();
  * item is actually cached.
  * @return {number} The cache's current hit rate.
  */
-NodeFire.getCacheHitRate = function() {
-  return (cacheHits || cacheMisses) ? cacheHits / (cacheHits + cacheMisses) : 0;
-};
+static getCacheHitRate()
 
 /**
  * Resets the cache's hit rate counters back to zero.
  */
-NodeFire.resetCacheHitRate = function() {
-  cacheHits = cacheMisses = 0;
-};
+static resetCacheHitRate()
 
 /**
  * Interpolates variables into a template string based on the object's scope (passed into the
@@ -132,7 +148,7 @@ NodeFire.resetCacheHitRate = function() {
  *     This scope takes precedence if a key is present in both.
  * @return {string} The interpolated string
  */
-NodeFire.prototype.interpolate = function(string, scope);
+interpolate(string, scope)
 
 /**
  * Authenticates with Firebase, using either a secret or a custom token.
@@ -144,13 +160,13 @@ NodeFire.prototype.interpolate = function(string, scope);
  * @return {Promise} A promise that is resolved when the authentication has completed successfully,
  *     and rejected with an error if it failed.
  */
-NodeFire.prototype.auth = function(secret, authObject);
+auth(secret, authObject)
 
 /**
  * Unauthenticates from Firebase.
  * @return {Promise} A resolved promise (for consistency, since unauthentication is immediate).
  */
-NodeFire.prototype.unauth = function();
+unauth()
 
 /**
  * Creates a new NodeFire object on the same reference, but with an extended interpolation scope.
@@ -158,7 +174,7 @@ NodeFire.prototype.unauth = function();
  *     precedence over) the one carried by this NodeFire object.
  * @return {NodeFire} A new NodeFire object with the same reference and new scope.
  */
-NodeFire.prototype.scope = function(scope);
+scope(scope)
 
 /**
  * Creates a new NodeFire object on a child of this one, and optionally an augmented scope.
@@ -169,27 +185,27 @@ NodeFire.prototype.scope = function(scope);
  *     scope.
  * @return {NodeFire} A new NodeFire object on the child reference, and with the augmented scope.
  */
-NodeFire.prototype.child = function(path, scope);
+child(path, scope)
 
 /**
  * Gets this reference's current value from Firebase, and inserts it into the cache if a
- * maxCacheSize was set.
+ * maxCacheSize was set and the `cache` option is not false.
  * @return {Promise} A promise that is resolved to the reference's value, or rejected with an error.
  *     The value returned is normalized: arrays are converted to objects, and the value's priority
  *     (if any) is set on a ".priority" attribute if the value is an object.
  */
-NodeFire.prototype.get = function();
+get()
 
 /**
  * Adds this reference to the cache (if maxCacheSize set) and counts a cache hit or miss.
  */
-NodeFire.prototype.cache = function();
+cache()
 
 /**
  * Removes this reference from the cache (if maxCacheSize is set).
  * @return True if the reference was cached, false otherwise.
  */
-NodeFire.prototype.uncache = function();
+uncache()
 
 /**
  * Sets the value at this reference.  To set the priority, include a ".priority" attribute on the
@@ -198,7 +214,7 @@ NodeFire.prototype.uncache = function();
  * @returns {Promise} A promise that is resolved when the value has been set, or rejected with an
  *     error.
  */
-NodeFire.prototype.set = function(value);
+set(value)
 
 /**
  * Sets the priority at this reference.  Useful because you can't pass a ".priority" key to
@@ -207,7 +223,7 @@ NodeFire.prototype.set = function(value);
  * @returns {Promise} A promise that is resolved when the priority has been set, or rejected with an
  *     error.
  */
-NodeFire.prototype.setPriority = function(priority);
+setPriority(priority)
 
 /**
  * Updates a value at this reference, setting only the top-level keys supplied and leaving any other
@@ -216,14 +232,14 @@ NodeFire.prototype.setPriority = function(priority);
  * @return {Promise} A promise that is resolved when the value has been updated, or rejected with an
  *     error.
  */
-NodeFire.prototype.update = function(value);
+update(value)
 
 /**
  * Removes this reference from the Firebase.
  * @return {Promise} A promise that is resolved when the value has been removed, or rejected with an
  *     error.
  */
-NodeFire.prototype.remove = function();
+remove()
 
 /**
  * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
@@ -232,7 +248,7 @@ NodeFire.prototype.remove = function();
  * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
  *     pushed value (with the same scope as this object), or rejected with an error.
  */
-NodeFire.prototype.push = function(value);
+push(value)
 
 /**
  * Runs a transaction at this reference.  The transaction is not applied locally first, since this
@@ -257,32 +273,32 @@ NodeFire.prototype.push = function(value);
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */
-NodeFire.prototype.transaction = function(updateFunction, options);
+transaction(updateFunction, options)
 
 /**
  * Generates a unique string that can be used as a key in Firebase.
  * @return {string} A unique string that satisfies Firebase's key syntax constraints.
  */
-NodeFire.prototype.generateUniqueKey = function();
+generateUniqueKey()
 
 /**
  * Returns the current timestamp after adjusting for the Firebase-computed server time offset.
  * @return {number} The current time in integer milliseconds since the epoch.
  */
-NodeFire.prototype.now = function();
+now()
 
 /**
  * Returns just the path component of the reference's URL.
  * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
  */
-NodeFire.prototype.path = function();
+path()
 
 /* Some methods that work the same as on Firebase objects. */
-NodeFire.prototype.parent = function();
-NodeFire.prototype.root = function();
-NodeFire.prototype.toString = function();
-NodeFire.prototype.key = function();
-NodeFire.prototype.ref = function();
+parent()
+root()
+toString()
+key()
+ref()
 
 /* Listener registration methods.  They work the same as on Firebase objects, except that the
    snapshot passed into the callback (and forEach) is wrapped such that:
@@ -291,17 +307,16 @@ NodeFire.prototype.ref = function();
         on which on() was called.
      3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
 */
-NodeFire.prototype.on = function(eventType, callback, cancelCallback, context);
-NodeFire.prototype.off = function(eventType, callback, context);
-NodeFire.prototype.once = function(eventType, successCallback, failureCallback, context);
+on(eventType, callback, cancelCallback, context)
+off(eventType, callback, context)
 
 /* Query methods, same as on Firebase objects. */
-NodeFire.prototype.limitToFirst = function(limit);
-NodeFire.prototype.limitToLast = function(limit);
-NodeFire.prototype.startAt = function(priority, name);
-NodeFire.prototype.endAt = function(priority, name);
-NodeFire.prototype.equalTo = function(value, key);
-NodeFire.prototype.orderByChild = function(key);
-NodeFire.prototype.orderByKey = function();
-NodeFire.prototype.orderByPriority = function();
+limitToFirst(limit)
+limitToLast(limit)
+startAt(priority, name)
+endAt(priority, name)
+equalTo(value, key)
+orderByChild(key)
+orderByKey()
+orderByPriority()
 ```
