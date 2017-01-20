@@ -303,7 +303,7 @@ class NodeFire {
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
   push(value, options) {
-    if (value === undefined) {
+    if (value === undefined || value === null) {
       return new NodeFire(this.$firebase.push(), this.$scope, this.$host);
     } else {
       return invoke({ref: this, method: 'push', args: [value]}, options, options => {
