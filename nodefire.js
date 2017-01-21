@@ -223,7 +223,7 @@ class NodeFire {
     } else {
       cacheMisses++;
       cache.set(url, this);
-      this.on('value', noopCallback, () => {
+      this.$firebase.on('value', noopCallback, () => {
         if (cache) cache.del(url);
       });
     }
@@ -464,7 +464,8 @@ class NodeFire {
    */
   on(eventType, callback, cancelCallback, context) {
     cancelCallback = wrapReject(this, 'on', cancelCallback);
-    this.$firebase.on(eventType, captureCallback(this, callback), cancelCallback, context);
+    this.$firebase.on(
+      eventType, captureCallback(this, eventType, callback), cancelCallback, context);
     return callback;
   }
 
@@ -472,7 +473,7 @@ class NodeFire {
    * Unregisters a listener.  Works the same as the Firebase method.
    */
   off(eventType, callback, context) {
-    this.$firebase.off(eventType, callback && callback.$nodeFireCallbacks.pop(), context);
+    this.$firebase.off(eventType, callback && popCallback(this, eventType, callback), context);
   }
 
   /**
@@ -530,7 +531,7 @@ class NodeFire {
     if (max) {
       if (!cache) {
         cache = new LRUCache({max: max, dispose: (key, ref) => {
-          ref.off('value', noopCallback);
+          ref.$firebase.off('value', noopCallback);
         }});
       } else {
         cache.max = max;
@@ -641,13 +642,20 @@ wrapNodeFire('ref');
 // wrapper function in case the user calls off().  We don't reuse wrappers so that the number of
 // wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
 // call to off().
-function captureCallback(nodeFire, callback) {
-  callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || [];
+function captureCallback(nodeFire, eventType, callback) {
+  const key = eventType + '::' + nodeFire.toString();
+  callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || {};
+  callback.$nodeFireCallbacks[key] = callback.$nodeFireCallbacks[key] || [];
   const nodeFireCallback = function(snap, previousChildKey) {
     runGenerator(callback.call(this, new Snapshot(snap, nodeFire), previousChildKey));
   };
-  callback.$nodeFireCallbacks.push(nodeFireCallback);
+  callback.$nodeFireCallbacks[key].push(nodeFireCallback);
   return nodeFireCallback;
+}
+
+function popCallback(nodeFire, eventType, callback) {
+  const key = eventType + '::' + nodeFire.toString();
+  return callback.$nodeFireCallbacks[key].pop();
 }
 
 function runGenerator(o) {
