@@ -433,7 +433,9 @@ class NodeFire {
         if (options.timeout) {
           timeoutId = setTimeout(() => {
             aborted = true;
-            wrappedReject(new Error('timeout'));
+            const e = new Error('timeout');
+            e.timeout = options.timeout;
+            wrappedReject(e);
           }, options.timeout);
         }
         if (options.prefetchValue || options.prefetchValue === undefined) {
@@ -696,9 +698,15 @@ function wrapReject(nodefire, method, value, reject) {
   }
   if (!reject) return reject;
   return function(error) {
+    error.firebase = {
+      method: method, ref: nodefire.toString(), value: hasValue ? value : undefined,
+      code: (error.code || error.message || '').toLowerCase() || undefined
+    };
+    if (error.message === 'timeout' && error.timeout) {
+      error.firebase.timeout = error.timeout;
+      delete error.timeout;
+    }
     error.message = 'Firebase: ' + error.message;
-    error.firebase = {method: method, ref: nodefire.toString()};
-    if (hasValue) error.firebase.value = value;
     reject(error);
   };
 }
@@ -772,12 +780,14 @@ function invoke(op, options, fn) {
     }));
     return Promise.race(promises).catch(e => {
       if (timeoutId) clearTimeout(timeoutId);
-      e.message = 'Firebase: ' + e.message;
       e.firebase = {
         ref: op.ref.toString(), method: op.method,
+        timeout: e.message === 'timeout' ? options.timeout : undefined,
+        code: (e.code || e.message || '').toLowerCase() || undefined,
         args: _.map(
           op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg)
       };
+      e.message = 'Firebase: ' + e.message;
       return Promise.reject(e);
     });
   });
