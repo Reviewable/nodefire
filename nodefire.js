@@ -368,7 +368,7 @@ class NodeFire {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
         let aborted;
-        let lastInputValue;
+        const inputValues = [];
         let numConsecutiveEqualInputValues = 0;
 
         function wrappedUpdateFunction(value) {
@@ -376,13 +376,17 @@ class NodeFire {
             wrappedReject = wrappedRejectNoResult;
             if (aborted) return;  // transaction otherwise aborted and promise settled, just stop
             if (options.detectStuck) {
-              if (lastInputValue !== undefined && _.isEqual(value, lastInputValue)) {
+              if (inputValues.length && _.isEqual(value, _.last(inputValues))) {
                 numConsecutiveEqualInputValues++;
               } else {
                 numConsecutiveEqualInputValues = 0;
-                lastInputValue = _.cloneDeep(value);
+                inputValues.push(_.cloneDeep(value));
               }
-              if (numConsecutiveEqualInputValues >= options.detectStuck) throw new Error('stuck');
+              if (numConsecutiveEqualInputValues >= options.detectStuck) {
+                const error = new Error('stuck');
+                error.inputValues = inputValues;
+                throw error;
+              }
             }
             if (++tries > 25) throw new Error('maxretry');
             result = updateFunction(getNormalRawValue(value));
@@ -703,6 +707,10 @@ function wrapReject(nodefire, method, value, reject) {
     if (error.message === 'timeout' && error.timeout) {
       error.firebase.timeout = error.timeout;
       delete error.timeout;
+    }
+    if (error.message === 'stuck' && error.inputValues) {
+      error.firebase.inputValues = error.inputValues;
+      delete error.inputValues;
     }
     error.message = 'Firebase: ' + error.message;
     reject(error);
