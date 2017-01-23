@@ -779,9 +779,9 @@ function invoke(op, options, fn) {
   ).then(() => {
     const promises = [];
     let timeoutId, settled;
-    if (options.timeout) promises.push(new Promise(resolve => {
+    if (options.timeout) promises.push(new Promise((resolve, reject) => {
       timeoutId = setTimeout(() => {
-        if (!settled) return Promise.reject(new Error('timeout'));
+        if (!settled) reject(new Error('timeout'));
       }, options.timeout);
     }));
     promises.push(Promise.resolve(fn(options)).then(result => {
