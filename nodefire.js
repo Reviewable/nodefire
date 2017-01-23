@@ -367,7 +367,7 @@ class NodeFire {
       const promise = new Promise((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
-        let aborted;
+        let aborted, settled;
         const inputValues = [];
         let numConsecutiveEqualInputValues = 0;
 
@@ -411,6 +411,7 @@ class NodeFire {
                 txn();
                 return;
               }
+              settled = true;
               if (timeoutId) clearTimeout(timeoutId);
               if (onceTxn) self.$firebase.off('value', onceTxn);
               fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
@@ -434,6 +435,7 @@ class NodeFire {
         }
         if (options.timeout) {
           timeoutId = setTimeout(() => {
+            if (settled) return;
             aborted = true;
             const e = new Error('timeout');
             e.timeout = options.timeout;
@@ -776,15 +778,19 @@ function invoke(op, options, fn) {
     )
   ).then(() => {
     const promises = [];
-    let timeoutId;
+    let timeoutId, settled;
     if (options.timeout) promises.push(new Promise(resolve => {
-      timeoutId = setTimeout(() => {return Promise.reject(new Error('timeout'));}, options.timeout);
+      timeoutId = setTimeout(() => {
+        if (!settled) return Promise.reject(new Error('timeout'));
+      }, options.timeout);
     }));
     promises.push(Promise.resolve(fn(options)).then(result => {
+      settled = true;
       if (timeoutId) clearTimeout(timeoutId);
       return result;
     }));
     return Promise.race(promises).catch(e => {
+      settled = true;
       if (timeoutId) clearTimeout(timeoutId);
       e.firebase = {
         ref: op.ref.toString(), method: op.method,
