@@ -382,9 +382,7 @@ class NodeFire {
                 numConsecutiveEqualInputValues = 0;
                 lastInputValue = _.cloneDeep(value);
               }
-              if (numConsecutiveEqualInputValues >= options.detectStuck) {
-                throw new Error('stuck' + (value === null ? ' (null)' : ''));
-              }
+              if (numConsecutiveEqualInputValues >= options.detectStuck) throw new Error('stuck');
             }
             if (++tries > 25) throw new Error('maxretry');
             result = updateFunction(getNormalRawValue(value));
