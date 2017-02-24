@@ -1,6 +1,8 @@
 NodeFire
 ========
 
+[![Project Status: Active - The project has reached a stable, usable state and is being actively developed.](http://www.repostatus.org/badges/latest/active.svg)](http://www.repostatus.org/#active)
+
 NodeFire is a Firebase library for NodeJS that has a pretty similar API but adds the following features:
 
 1. Most methods return a promise, instead of requiring a callback.  This works especially nicely with a framework like `co`, allowing you to control data flow with `yield` statements.
