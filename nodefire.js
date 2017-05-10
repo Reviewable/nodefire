@@ -651,10 +651,7 @@ wrapNodeFire('ref');
 
 if (Firebase.prototype.childrenKeys) {
   NodeFire.prototype.childrenKeys = function(options) {
-    return this.$firebase.childrenKeys(options).then(keys => {
-      if (!_.some(keys, key => /\\/.test(key))) return keys;
-      return _.map(keys, key => NodeFire.unescape(key));
-    });
+    return this.$firebase.childrenKeys(options);
   };
 }
 
