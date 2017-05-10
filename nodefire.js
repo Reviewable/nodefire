@@ -6,6 +6,12 @@ const _ = require('lodash');
 const url = require('url');
 const LRUCache = require('lru-cache');
 
+try {
+  require('firebase-childrenkeys');
+} catch (e) {
+  // ignore, not available
+}
+
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {};
 const operationInterceptors = [];
@@ -642,6 +648,15 @@ wrapNodeFire('orderByKey');
 wrapNodeFire('orderByValue');
 wrapNodeFire('orderByPriority');
 wrapNodeFire('ref');
+
+if (Firebase.prototype.childrenKeys) {
+  NodeFire.prototype.childrenKeys = function(options) {
+    return this.$firebase.childrenKeys(options).then(keys => {
+      if (!_.some(keys, key => /\\/.test(key))) return keys;
+      return _.map(keys, key => NodeFire.unescape(key));
+    });
+  };
+}
 
 
 // We need to wrap the user's callback so that we can wrap each snapshot, but must keep track of the
