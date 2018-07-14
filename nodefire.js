@@ -696,7 +696,7 @@ function delegateNodeFire(method) {
 function wrapNodeFire(method) {
   NodeFire.prototype[method] = function() {
     return new NodeFire(
-      this.$firebase[method].apply(this.$firebase, arguments), undefined, this.$host);
+      this.$firebase[method].apply(this.$firebase, arguments), this.$scope, this.$host);
   };
 }
 
