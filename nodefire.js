@@ -500,10 +500,11 @@ class NodeFire {
   }
 
   /**
-   * Tries to fetch they keys of all the children of this node, without also fetching all the
-   * contents, using the Firebase REST API.
+   * Fetches the keys of the current reference's children without also fetching all the contents,
+   * using the Firebase REST API.
+   * 
    * @param options An options object with the following items, all optional:
-   *   - auth: an auth token to pass to the REST API
+   *   - accessToken: a Google OAuth2 access token to pass to the REST API.
    *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient errors
    *               (defaults to 1)
    *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
@@ -512,7 +513,7 @@ class NodeFire {
   childrenKeys(options = {}) {
     const uri = this.toString() + '.json';
     const qs = {shallow: true};
-    if (options.auth) qs.auth = options.auth;
+    if (options.accessToken) qs.access_token = options.accessToken;
     return new Promise((resolve, reject) => {
       let tries = 0;
       function tryRequest() {
@@ -523,8 +524,20 @@ class NodeFire {
           } else if (error) {
             reject(error);
           } else {
-            const object = JSON.parse(data);
-            resolve(object ? Object.keys(object) : []);
+            try {
+              const object = JSON.parse(data);
+              if (_.get(object, 'error') === 'Permission denied') {
+                reject(
+                  new Error('Failed to fetch children keys from Firebase REST API: Permission denied')
+                );
+              } else {
+                resolve(object ? Object.keys(object) : []);
+              }
+            } catch (error) {
+              reject(
+                new Error(`Failed to parse response from Firebase REST API: ${error.toString()}`)
+              );
+            }
           }
         });
       }
