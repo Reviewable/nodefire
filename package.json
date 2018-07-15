@@ -7,7 +7,7 @@
     "node": ">=6.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/runner.js"
   },
   "repository": {
     "type": "git",
@@ -30,5 +30,8 @@
     "lodash": "^3.10.1",
     "lru-cache": "^4.0.0",
     "request": "^2.87.0"
+  },
+  "devDependencies": {
+    "googleapis": "^32.0.0"
   }
 }
