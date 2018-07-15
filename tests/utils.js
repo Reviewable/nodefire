@@ -8,13 +8,13 @@ const {google} = require('googleapis');
  */
 module.exports.fetchAccessToken = (serviceAccount) => {
   // Define the required scopes.
-  var scopes = [
+  const scopes = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/firebase.database"
   ];
 
   // Authenticate a JWT client with the service account.
-  var jwtClient = new google.auth.JWT(
+  const jwtClient = new google.auth.JWT(
     serviceAccount.client_email,
     null,
     serviceAccount.private_key,

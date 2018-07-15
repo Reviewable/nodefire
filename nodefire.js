@@ -534,9 +534,7 @@ class NodeFire {
                 resolve(object ? Object.keys(object) : []);
               }
             } catch (error) {
-              reject(
-                new Error(`Failed to parse response from Firebase REST API: ${error.toString()}`)
-              );
+              reject(error);
             }
           }
         });
