@@ -49,7 +49,6 @@ class Snapshot {
 /* Snapshot methods that work the same. */
 delegateSnapshot('toJSON');
 delegateSnapshot('exists');
-delegateSnapshot('forEach');
 delegateSnapshot('hasChild');
 delegateSnapshot('hasChildren');
 delegateSnapshot('numChildren');
