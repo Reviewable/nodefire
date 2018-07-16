@@ -1,7 +1,6 @@
 'use strict';
 
-const Firebase = require('firebase');
-const FirebaseTokenGenerator = require('firebase-token-generator');
+const admin = require('firebase-admin');
 const _ = require('lodash');
 const url = require('url');
 const request = require('request');
@@ -14,13 +13,21 @@ const operationInterceptors = [];
 
 /**
   A wrapper around a Firebase DataSnapshot.  Works just like a Firebase snapshot, except that
-  ref() returns a NodeFire instance, val() normalizes the value, and child() takes an optional
+  ref returns a NodeFire instance, val() normalizes the value, and child() takes an optional
   refining scope.
  */
 class Snapshot {
   constructor(snap, nodeFire) {
     this.$snap = snap;
     this.$nodeFire = nodeFire;
+  }
+
+  get key() {
+    return this.$snap.key;
+  }
+
+  get ref() {
+    return new NodeFire(this.$snap.ref, this.$nodeFire.$scope, this.$nodeFire.$host);
   }
 
   val() {
@@ -37,20 +44,14 @@ class Snapshot {
       return callback(new Snapshot(child, this.$nodeFire));
     });
   }
-
-  ref() {
-    return new NodeFire(this.$snap.ref(), this.$nodeFire.$scope, this.$nodeFire.$host);
-  }
 }
 
 /* Snapshot methods that work the same. */
+delegateSnapshot('toJSON');
 delegateSnapshot('exists');
 delegateSnapshot('hasChild');
 delegateSnapshot('hasChildren');
-delegateSnapshot('key');
 delegateSnapshot('numChildren');
-delegateSnapshot('getPriority');
-delegateSnapshot('exportVal');
 
 
 /**
@@ -71,22 +72,100 @@ class NodeFire {
   /**
    * Creates a new NodeFire wrapper around a raw Firebase reference.
    *
-   * @param {string || Firebase} refOrUrl The Firebase URL (or Firebase reference instance) that
-   *     this object will represent.
-   * @param {Object} scope Optional dictionary that will be used for interpolating paths.
-   * @param {string} host For internal use only, do not pass.
+   * @param {admin.database.Query} ref A fully authenticated Firebase reference or query.
+   * @param {Object} options Optional dictionary containing options.
+   * @param {Object} options.scope Optional dictionary that will be used for interpolating paths.
+   * @param {string} options.host For internal use only, do not pass.
    */
-  constructor(refOrUrl, scope, host) {
-    if (_.isString(refOrUrl)) refOrUrl = new Firebase(refOrUrl);
-    this.$firebase = refOrUrl;
-    this.$scope = scope || {};
-    if (!host) host = url.parse(refOrUrl.toString()).host;
-    this.$host = host;
-    if (!(host in serverTimeOffsets)) {
-      serverTimeOffsets[host] = 0;
-      trackTimeOffset(host);
+  constructor(ref, options = {}) {
+    const refIsNonNullObject = typeof ref === 'object' && ref !== null;
+    if (!refIsNonNullObject || typeof ref.ref !== 'object' || typeof ref.ref.transaction !== 'function') {
+      throw new Error(
+        `Expected first argument passed to NodeFire constructor to be a Firebase Database reference, 
+        but got "${ref}".`
+      );
+    } else if (typeof options !== 'object' || options === null) {
+      throw new Error(
+        `Expected second argument passed to NodeFire constructor to be an object, but got "${options}".`
+      );
     }
-    if (!(host in serverDisconnects)) trackDisconnect(host);
+
+    this.$ref = ref;
+
+    this.$scope = options.scope || {};
+    this.$host = options.host || url.parse(this.$ref.toString()).host;
+
+    if (!(this.$host in serverTimeOffsets)) {
+      serverTimeOffsets[this.$host] = 0;
+      trackTimeOffset(this.$host, this);
+    }
+    if (!(this.$host in serverDisconnects)) {
+      trackDisconnect(this.$host, this);
+    }
+  }
+
+  /**
+   * Returns a placeholder value for auto-populating the current timestamp (time since the Unix
+   * epoch, in milliseconds) as determined by the Firebase servers.
+   * @return {Object} A timestamp placeholder value.
+   */
+  static get SERVER_TIMESTAMP() {
+    return {
+      '.sv': 'timestamp'
+    };
+  }
+
+  /**
+   * Returns the last part of this reference's path. The key of a root reference is `null`.
+   * @return {string|null} The last part this reference's path.
+   */
+  get key() {
+    return this.$ref.key;
+  }
+
+  /**
+   * Returns just the path component of the reference's URL.
+   * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
+   */
+  get path() {
+    return decodeURIComponent(this.$ref.toString()).slice(this.$ref.root.toString().length - 1);
+  }
+
+  /**
+   * Returns a NodeFire reference at the same location as this query or reference.
+   * @return {NodeFire|null} A NodeFire reference at the same location as this query or reference.
+   */
+  get ref() {
+    if (this.$ref.isEqual(this.$ref.ref)) {
+      return this;
+    } else {
+      return new NodeFire(this.$ref.ref, this.$scope, this.$host);
+    }
+  }
+
+  /**
+   * Returns a NodeFire reference to the root of the database.
+   * @return {NodeFire} The root reference of the database.
+   */
+  get root() {
+    if (this.$ref.isEqual(this.$ref.root)) {
+      return this;
+    } else {
+      return new NodeFire(this.$ref.root, this.$scope, this.$host);
+    }
+  }
+
+  /**
+   * Returns a NodeFire reference to the parent location of this reference. The parent of a root
+   * reference is `null`.
+   * @return {NodeFire|null} The parent location of this reference.
+   */
+  get parent() {
+    if (this.$ref.parent === null) {
+      return null;
+    } else {
+      return new NodeFire(this.$ref.parent, this.$scope, this.$host);
+    }
   }
 
   /**
@@ -123,35 +202,19 @@ class NodeFire {
   // TODO: add user/password-related methods
 
   /**
-   * Authenticates with Firebase, using either a secret or a custom token.
-   * @param  {string} secret A secret for the Firebase referenced by this NodeFire object (copy from
-   *     the Firebase dashboard).
-   * @param  {Object} authObject Optional.  If provided, instead of authenticating with the secret
-   *     directly (which disables all security checks), we'll generate a custom token with the auth
-   *     value provided here and an expiry far in the future.
-   * @return {Promise} A promise that is resolved when the authentication has completed
-   *     successfully, and rejected with an error if it failed.
+   * Returns a JSON-serializable representation of this object.
+   * @return {Object} A JSON-serializable representation of this object.
    */
-  auth(secret, authObject, options) {
-    let token = secret;
-    if (authObject) {
-      // Tokens expire 10 years from now.
-      token = new FirebaseTokenGenerator(secret).createToken(
-        authObject, {expires: this.now() + 315360000});
-    }
-    return invoke(
-      {ref: this, method: 'auth', args: [secret, authObject]}, options,
-      options => this.$firebase.authWithCustomToken(token)
-    );
+  toJSON() {
+    return this.$ref.toJSON();
   }
 
   /**
-   * Unauthenticates from Firebase.
-   * @return {Promise} A resolved promise (for consistency, since unauthentication is immediate).
+   * Returns whether or not this Firebase reference is equivalent to the provided Firebase reference.
+   * @return {NodeFire} Another NodeFire instance against which to compare.
    */
-  unauth() {
-    return invoke(
-      {ref: this, method: 'unauth', args: []}, null, options => this.$firebase.unauth());
+  isEqual(otherRef) {
+    return this.$ref.isEqual(otherRef.$ref);
   }
 
   /**
@@ -159,17 +222,7 @@ class NodeFire {
    * @return {string} The Firebase URL wrapped by this NodeFire object.
    */
   toString() {
-    return decodeURIComponent(this.$firebase.toString());
-  }
-
-  /**
-   * Returns just the path component of the reference's URL.
-   * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
-   */
-  path() {
-    let path = decodeURIComponent(this.$firebase.toString());
-    if (this.$firebase.root) path = path.slice(this.$firebase.root().toString().length - 1);
-    return path;
+    return decodeURIComponent(this.$ref.toString());
   }
 
   /**
@@ -179,7 +232,7 @@ class NodeFire {
    * @return {NodeFire} A new NodeFire object with the same reference and new scope.
    */
   scope(scope) {
-    return new NodeFire(this.$firebase, _.extend(_.clone(this.$scope), scope), this.$host);
+    return new NodeFire(this.$ref, _.extend(_.clone(this.$scope), scope), this.$host);
   }
 
   /**
@@ -193,22 +246,21 @@ class NodeFire {
    */
   child(path, scope) {
     const child = this.scope(scope);
-    return new NodeFire(this.$firebase.child(child.interpolate(path)), child.$scope, this.$host);
+    return new NodeFire(this.$ref.child(child.interpolate(path)), child.$scope, this.$host);
   }
 
   /**
    * Gets this reference's current value from Firebase, and inserts it into the cache if a
    * maxCacheSize was set and the `cache` option is not false.
    * @return {Promise} A promise that is resolved to the reference's value, or rejected with an
-   *     error.  The value returned is normalized: arrays are converted to objects, and the value's
-   *     priority (if any) is set on a ".priority" attribute if the value is an object.
+   *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
   get(options) {
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       options => {
         if (options.cache === undefined || options.cache) this.cache();
-        return this.$firebase.once('value').then(snap => getNormalValue(snap));
+        return this.$ref.once('value').then(snap => getNormalValue(snap));
       }
     );
   }
@@ -224,7 +276,7 @@ class NodeFire {
     } else {
       cacheMisses++;
       cache.set(url, this);
-      this.$firebase.on('value', noopCallback, () => {
+      this.$ref.on('value', noopCallback, () => {
         if (cache) cache.del(url);
       });
     }
@@ -243,8 +295,7 @@ class NodeFire {
   }
 
   /**
-   * Sets the value at this reference.  To set the priority, include a ".priority" attribute on the
-   * value.
+   * Sets the value at this reference.
    * @param {Object || number || string || boolean} value The value to set.
    * @returns {Promise} A promise that is resolved when the value has been set, or rejected with an
    *     error.
@@ -252,21 +303,7 @@ class NodeFire {
   set(value, options) {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
-      options => this.$firebase.set(value)
-    );
-  }
-
-  /**
-   * Sets the priority at this reference.  Useful because you can't pass a ".priority" key to
-   * update().
-   * @param {string || number} priority The priority for the data at this reference.
-   * @returns {Promise} A promise that is resolved when the priority has been set, or rejected with
-   *     an error.
-   */
-  setPriority(priority, options) {
-    return invoke(
-      {ref: this, method: 'setPriority', args: [priority]}, options,
-      options => this.$firebase.setPriority(priority)
+      options => this.$ref.set(value)
     );
   }
 
@@ -280,7 +317,7 @@ class NodeFire {
   update(value, options) {
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
-      options => this.$firebase.update(value)
+      options => this.$ref.update(value)
     );
   }
 
@@ -292,7 +329,7 @@ class NodeFire {
   remove(options) {
     return invoke(
       {ref: this, method: 'remove', args: []}, options,
-      options => this.$firebase.remove()
+      options => this.$ref.remove()
     );
   }
 
@@ -305,10 +342,10 @@ class NodeFire {
    */
   push(value, options) {
     if (value === undefined || value === null) {
-      return new NodeFire(this.$firebase.push(), this.$scope, this.$host);
+      return new NodeFire(this.$ref.push(), this.$scope, this.$host);
     } else {
       return invoke({ref: this, method: 'push', args: [value]}, options, options => {
-        const ref = this.$firebase.push(value);
+        const ref = this.$ref.push(value);
         return ref.then(() => new NodeFire(ref, this.$scope, this.$host));
       });
     }
@@ -407,14 +444,14 @@ class NodeFire {
         function txn() {
           if (!prefetchDoneTime) prefetchDoneTime = self.now();
           try {
-            self.$firebase.transaction(wrappedUpdateFunction, (error, committed, snap) => {
+            self.$ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
               if (error && (error.message === 'set' || error.message === 'disconnect')) {
                 txn();
                 return;
               }
               settled = true;
               if (timeoutId) clearTimeout(timeoutId);
-              if (onceTxn) self.$firebase.off('value', onceTxn);
+              if (onceTxn) self.$ref.off('value', onceTxn);
               fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
               if (NodeFire.LOG_TRANSACTIONS) {
                 console.log(JSON.stringify({txn: {
@@ -450,7 +487,7 @@ class NodeFire {
           // ref.
           self.cache();
           onceTxn = _.once(txn);
-          self.$firebase.on('value', onceTxn, wrappedRejectNoResult);
+          self.$ref.on('value', onceTxn, wrappedRejectNoResult);
         } else {
           txn();
         }
@@ -471,7 +508,7 @@ class NodeFire {
    */
   on(eventType, callback, cancelCallback, context) {
     cancelCallback = wrapReject(this, 'on', cancelCallback);
-    this.$firebase.on(
+    this.$ref.on(
       eventType, captureCallback(this, eventType, callback), cancelCallback, context);
     return callback;
   }
@@ -480,7 +517,7 @@ class NodeFire {
    * Unregisters a listener.  Works the same as the Firebase method.
    */
   off(eventType, callback, context) {
-    this.$firebase.off(eventType, callback && popCallback(this, eventType, callback), context);
+    this.$ref.off(eventType, callback && popCallback(this, eventType, callback), context);
   }
 
   /**
@@ -488,7 +525,7 @@ class NodeFire {
    * @return {string} A unique string that satisfies Firebase's key syntax constraints.
    */
   generateUniqueKey() {
-    return this.$firebase.push().key();
+    return this.$ref.push().key;
   }
 
   /**
@@ -582,7 +619,7 @@ class NodeFire {
     if (max) {
       if (!cache) {
         cache = new LRUCache({max: max, dispose: (key, ref) => {
-          ref.$firebase.off('value', noopCallback);
+          ref.$ref.off('value', noopCallback);
         }});
       } else {
         cache.max = max;
@@ -666,16 +703,6 @@ NodeFire.LOG_TRANSACTIONS = false;
  */
 NodeFire.ROLLING = {};
 
-/* Some static methods copied over from the Firebase class. */
-NodeFire.goOffline = Firebase.goOffline;
-NodeFire.goOnline = Firebase.goOnline;
-NodeFire.ServerValue = Firebase.ServerValue;
-
-/* Some methods that work the same as on Firebase objects. */
-wrapNodeFire('parent');
-wrapNodeFire('root');
-delegateNodeFire('key');
-
 /* Query methods, same as on Firebase objects. */
 wrapNodeFire('limitToFirst');
 wrapNodeFire('limitToLast');
@@ -685,8 +712,6 @@ wrapNodeFire('equalTo');
 wrapNodeFire('orderByChild');
 wrapNodeFire('orderByKey');
 wrapNodeFire('orderByValue');
-wrapNodeFire('orderByPriority');
-wrapNodeFire('ref');
 
 
 // We need to wrap the user's callback so that we can wrap each snapshot, but must keep track of the
@@ -720,16 +745,10 @@ function runGenerator(o) {
 }
 
 
-function delegateNodeFire(method) {
-  NodeFire.prototype[method] = function() {
-    return this.$firebase[method].apply(this.$firebase, arguments);
-  };
-}
-
 function wrapNodeFire(method) {
   NodeFire.prototype[method] = function() {
     return new NodeFire(
-      this.$firebase[method].apply(this.$firebase, arguments), _.clone(this.$scope), this.$host);
+      this.$ref[method].apply(this.$ref, arguments), this.$scope, this.$host);
   };
 }
 
@@ -766,17 +785,18 @@ function wrapReject(nodefire, method, value, reject) {
 
 function noopCallback() {}
 
-function trackTimeOffset(host) {
-  new Firebase('https://' + host + '/.info/serverTimeOffset').on('value', snap => {
+function trackTimeOffset(host, ref) {
+  ref.root.child('.info/serverTimeOffset').on('value', snap => {
     serverTimeOffsets[host] = snap.val();
-  }, _.bind(trackTimeOffset, host));
+  }, _.bind(trackTimeOffset, host, ref));
 }
 
-function trackDisconnect(host) {
-  serverDisconnects[host] = new Firebase('https://' + host + '/.info/connected').on(
+function trackDisconnect(host, ref) {
+  serverDisconnects[host] = true;
+  ref.root.child('.info/connected').on(
     'value', snap => {
       if (!snap.val()) trimCache(host);
-    }, _.bind(trackDisconnect, host)
+    }, _.bind(trackDisconnect, host, ref)
   );
 }
 
@@ -792,9 +812,7 @@ function trimCache(host) {
 }
 
 function getNormalValue(snap) {
-  const value = getNormalRawValue(snap.val());
-  if (snap.getPriority() !== null && _.isObject(value)) value['.priority'] = snap.getPriority();
-  return value;
+  return getNormalRawValue(snap.val());
 }
 
 function getNormalRawValue(value) {
@@ -814,8 +832,7 @@ function getNormalRawValue(value) {
   return value;
 }
 
-function invoke(op, options, fn) {
-  options = options || {};
+function invoke(op, options = {}, fn) {
   return Promise.all(
     _.map(
       operationInterceptors,

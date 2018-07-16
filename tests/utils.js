@@ -1,4 +1,16 @@
+const fs = require('fs');
+const path = require('path');
 const {google} = require('googleapis');
+
+const pathToServiceAccount = path.resolve(__dirname, '../resources/serviceAccount.json');
+if (!fs.existsSync(pathToServiceAccount)) {
+  console.log(
+    `[ERROR] Firebase service account not found. Please place it in ${pathToServiceAccount}.`
+  );
+  process.exit(1);
+}
+
+const serviceAccount = require(pathToServiceAccount);
 
 /**
  * Generates a Google OAuth2 access token for use authenticating to Firebase services, such as the
@@ -6,7 +18,7 @@ const {google} = require('googleapis');
  * 
  * See https://firebase.google.com/docs/database/rest/auth#google_oauth2_access_tokens.
  */
-module.exports.fetchAccessToken = (serviceAccount) => {
+module.exports.fetchAccessToken = () => {
   // Define the required scopes.
   const scopes = [
     "https://www.googleapis.com/auth/userinfo.email",
