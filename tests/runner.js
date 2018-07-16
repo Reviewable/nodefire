@@ -8,6 +8,7 @@ const NodeFire = require('../nodefire.js');
 console.log(`[INFO] Running tests...`)
 
 const rootRef = new NodeFire(admin.database().ref());
+const rootQueryRef = rootRef.startAt('a').endAt('b').orderByKey().limitToFirst(10);
 const fooRef = rootRef.child('foo');
 const barRef = fooRef.child('bar');
 const randomRef = rootRef.push();
@@ -24,6 +25,12 @@ assert(barRef.parent.key === 'foo', `barRef.parent.key should be 'foo'`);
 assert(!rootRef.isEqual(barRef.parent), `rootRef.isEqual(barRef.parent) should be false`);
 assert(fooRef.isEqual(barRef.parent), `fooRef.isEqual(barRef.parent) should be true`);
 assert(rootRef.isEqual(barRef.parent.parent), `rootRef.isEqual(barRef.parent.parent) should be true`);
+
+assert(rootRef.isEqual(rootRef.ref), `rootRef.isEqual(rootRef.ref) should be true`);
+assert(rootRef.isEqual(rootRef.ref.ref), `rootRef.isEqual(rootRef.ref.ref) should be true`);
+assert(!rootRef.isEqual(rootQueryRef), `rootRef.isEqual(rootQueryRef) should be false`);
+assert(rootRef.isEqual(rootQueryRef.ref), `rootRef.isEqual(rootQueryRef.ref) should be true`);
+assert(!rootQueryRef.isEqual(rootQueryRef.ref), `rootQueryRef.isEqual(rootQueryRef.ref) should be false`);
 
 let accessToken;
 

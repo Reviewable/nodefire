@@ -20,8 +20,14 @@ class Snapshot {
   constructor(snap, nodeFire) {
     this.$snap = snap;
     this.$nodeFire = nodeFire;
-    this.key = this.$snap.key;
-    this.ref = new NodeFire(this.$snap.ref, this.$nodeFire.$scope, this.$nodeFire.$host);
+  }
+
+  get key() {
+    return this.$snap.key;
+  }
+
+  get ref() {
+    return new NodeFire(this.$snap.ref, this.$nodeFire.$scope, this.$nodeFire.$host);
   }
 
   val() {
@@ -41,13 +47,12 @@ class Snapshot {
 }
 
 /* Snapshot methods that work the same. */
+delegateSnapshot('toJSON');
 delegateSnapshot('exists');
+delegateSnapshot('forEach');
 delegateSnapshot('hasChild');
 delegateSnapshot('hasChildren');
-delegateSnapshot('key');
 delegateSnapshot('numChildren');
-delegateSnapshot('getPriority');
-delegateSnapshot('exportVal');
 
 
 /**
@@ -74,8 +79,8 @@ class NodeFire {
    * @param {string} options.host For internal use only, do not pass.
    */
   constructor(ref, options = {}) {
-    const refIsNonNullObject = (typeof ref === 'object' && ref !== null);
-    if (!refIsNonNullObject || typeof ref.ref !== 'object' || typeof ref.transaction !== 'function') {
+    const refIsNonNullObject = typeof ref === 'object' && ref !== null;
+    if (!refIsNonNullObject || typeof ref.ref !== 'object' || typeof ref.ref.transaction !== 'function') {
       throw new Error(
         `Expected first argument passed to NodeFire constructor to be a Firebase Database reference, 
         but got "${ref}".`
@@ -91,27 +96,76 @@ class NodeFire {
     this.$scope = options.scope || {};
     this.$host = options.host || url.parse(this.$ref.toString()).host;
 
-    this.key = this.$ref.key;
-    this.ref = this.$ref.ref;
-
-    if (this.$ref.parent === null) {
-      this.parent = null;
-    } else {
-      this.parent = new NodeFire(this.$ref.parent, _.clone(this.$scope), this.$host);
-    }
-
-    if (this.$ref.isEqual(this.$ref.root)) {
-      this.root = this;
-    } else {
-      this.root = new NodeFire(this.$ref.root, _.clone(this.$scope), this.$host);
-    }
-
     if (!(this.$host in serverTimeOffsets)) {
       serverTimeOffsets[this.$host] = 0;
       trackTimeOffset(this.$host, this);
     }
     if (!(this.$host in serverDisconnects)) {
       trackDisconnect(this.$host, this);
+    }
+  }
+
+  /**
+   * Returns a placeholder value for auto-populating the current timestamp (time since the Unix
+   * epoch, in milliseconds) as determined by the Firebase servers.
+   * @return {Object} A timestamp placeholder value.
+   */
+  static get SERVER_TIMESTAMP() {
+    return {
+      '.sv': 'timestamp'
+    };
+  }
+
+  /**
+   * Returns the last part of this reference's path. The key of a root reference is `null`.
+   * @return {string|null} The last part this reference's path.
+   */
+  get key() {
+    return this.$ref.key;
+  }
+
+  /**
+   * Returns just the path component of the reference's URL.
+   * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
+   */
+  get path() {
+    return decodeURIComponent(this.$ref.toString()).slice(this.$ref.root.toString().length - 1);
+  }
+
+  /**
+   * Returns a NodeFire reference at the same location as this query or reference.
+   * @return {NodeFire|null} A NodeFire reference at the same location as this query or reference.
+   */
+  get ref() {
+    if (this.$ref.isEqual(this.$ref.ref)) {
+      return this;
+    } else {
+      return new NodeFire(this.$ref.ref, this.$scope, this.$host);
+    }
+  }
+
+  /**
+   * Returns a NodeFire reference to the root of the database.
+   * @return {NodeFire} The root reference of the database.
+   */
+  get root() {
+    if (this.$ref.isEqual(this.$ref.root)) {
+      return this;
+    } else {
+      return new NodeFire(this.$ref.root, this.$scope, this.$host);
+    }
+  }
+
+  /**
+   * Returns a NodeFire reference to the parent location of this reference. The parent of a root
+   * reference is `null`.
+   * @return {NodeFire|null} The parent location of this reference.
+   */
+  get parent() {
+    if (this.$ref.parent === null) {
+      return null;
+    } else {
+      return new NodeFire(this.$ref.parent, this.$scope, this.$host);
     }
   }
 
@@ -173,14 +227,6 @@ class NodeFire {
   }
 
   /**
-   * Returns just the path component of the reference's URL.
-   * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
-   */
-  path() {
-    return decodeURIComponent(this.$ref.toString()).slice(this.$ref.root.toString().length - 1);
-  }
-
-  /**
    * Creates a new NodeFire object on the same reference, but with an extended interpolation scope.
    * @param  {Object} scope A dictionary of interpolation variables that will be added to (and take
    *     precedence over) the one carried by this NodeFire object.
@@ -208,8 +254,7 @@ class NodeFire {
    * Gets this reference's current value from Firebase, and inserts it into the cache if a
    * maxCacheSize was set and the `cache` option is not false.
    * @return {Promise} A promise that is resolved to the reference's value, or rejected with an
-   *     error.  The value returned is normalized: arrays are converted to objects, and the value's
-   *     priority (if any) is set on a ".priority" attribute if the value is an object.
+   *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
   get(options) {
     return invoke(
@@ -251,8 +296,7 @@ class NodeFire {
   }
 
   /**
-   * Sets the value at this reference.  To set the priority, include a ".priority" attribute on the
-   * value.
+   * Sets the value at this reference.
    * @param {Object || number || string || boolean} value The value to set.
    * @returns {Promise} A promise that is resolved when the value has been set, or rejected with an
    *     error.
@@ -261,35 +305,6 @@ class NodeFire {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
       options => this.$ref.set(value)
-    );
-  }
-
-  /**
-   * Sets the priority at this reference.  Useful because you can't pass a ".priority" key to
-   * update().
-   * @param {string || number} priority The priority for the data at this reference.
-   * @returns {Promise} A promise that is resolved when the priority has been set, or rejected with
-   *     an error.
-   */
-  setPriority(priority, options) {
-    return invoke(
-      {ref: this, method: 'setPriority', args: [priority]}, options,
-      options => this.$ref.setPriority(priority)
-    );
-  }
-
-  /**
-   * Sets a value with a priority at this reference.  Useful because you can't pass a ".priority"
-   * key to update().
-   * @param  {Object} value The value to set the reference with.
-   * @param {string || number} priority The priority for the data at this reference.
-   * @returns {Promise} A promise that is resolved when the value and priority have been set, or
-   *     rejected with an error.
-   */
-  setWithPriority(value, priority, options) {
-    return invoke(
-      {ref: this, method: 'setWithPriority', args: [value, priority]}, options,
-      options => this.$ref.setWithPriority(value, priority)
     );
   }
 
@@ -698,7 +713,6 @@ wrapNodeFire('equalTo');
 wrapNodeFire('orderByChild');
 wrapNodeFire('orderByKey');
 wrapNodeFire('orderByValue');
-wrapNodeFire('orderByPriority');
 
 
 // We need to wrap the user's callback so that we can wrap each snapshot, but must keep track of the
@@ -735,7 +749,7 @@ function runGenerator(o) {
 function wrapNodeFire(method) {
   NodeFire.prototype[method] = function() {
     return new NodeFire(
-      this.$ref[method].apply(this.$ref, arguments), _.clone(this.$scope), this.$host);
+      this.$ref[method].apply(this.$ref, arguments), this.$scope, this.$host);
   };
 }
 
@@ -799,9 +813,7 @@ function trimCache(host) {
 }
 
 function getNormalValue(snap) {
-  const value = getNormalRawValue(snap.val());
-  if (snap.getPriority() !== null && _.isObject(value)) value['.priority'] = snap.getPriority();
-  return value;
+  return getNormalRawValue(snap.val());
 }
 
 function getNormalRawValue(value) {
