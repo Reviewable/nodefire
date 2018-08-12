@@ -27,7 +27,10 @@ class Snapshot {
   }
 
   get ref() {
-    return new NodeFire(this.$snap.ref, this.$nodeFire.$scope, this.$nodeFire.$host);
+    return new NodeFire(this.$snap.ref, {
+      scope: this.$nodeFire.$scope,
+      host: this.$nodeFire.$host,
+    });
   }
 
   val() {
@@ -139,7 +142,10 @@ class NodeFire {
     if (this.$ref.isEqual(this.$ref.ref)) {
       return this;
     } else {
-      return new NodeFire(this.$ref.ref, this.$scope, this.$host);
+      return new NodeFire(this.$ref.ref, {
+        scope: this.$scope,
+        host: this.$host,
+      });
     }
   }
 
@@ -151,7 +157,10 @@ class NodeFire {
     if (this.$ref.isEqual(this.$ref.root)) {
       return this;
     } else {
-      return new NodeFire(this.$ref.root, this.$scope, this.$host);
+      return new NodeFire(this.$ref.root, {
+        scope: this.$scope,
+        host: this.$host,
+      });
     }
   }
 
@@ -164,7 +173,10 @@ class NodeFire {
     if (this.$ref.parent === null) {
       return null;
     } else {
-      return new NodeFire(this.$ref.parent, this.$scope, this.$host);
+      return new NodeFire(this.$ref.parent, {
+        scope: this.$scope,
+        host: this.$host,
+      });
     }
   }
 
@@ -232,7 +244,10 @@ class NodeFire {
    * @return {NodeFire} A new NodeFire object with the same reference and new scope.
    */
   scope(scope) {
-    return new NodeFire(this.$ref, _.extend(_.clone(this.$scope), scope), this.$host);
+    return new NodeFire(this.$ref, {
+      scope: _.extend(_.clone(this.$scope), scope),
+      host: this.$host,
+    });
   }
 
   /**
@@ -246,7 +261,10 @@ class NodeFire {
    */
   child(path, scope) {
     const child = this.scope(scope);
-    return new NodeFire(this.$ref.child(child.interpolate(path)), child.$scope, this.$host);
+    return new NodeFire(this.$ref.child(child.interpolate(path)), {
+      scope: child.$scope,
+      host: this.$host,
+    });
   }
 
   /**
@@ -342,11 +360,17 @@ class NodeFire {
    */
   push(value, options) {
     if (value === undefined || value === null) {
-      return new NodeFire(this.$ref.push(), this.$scope, this.$host);
+      return new NodeFire(this.$ref.push(), {
+        scope: this.$scope,
+        host: this.$host,
+      });
     } else {
       return invoke({ref: this, method: 'push', args: [value]}, options, options => {
         const ref = this.$ref.push(value);
-        return ref.then(() => new NodeFire(ref, this.$scope, this.$host));
+        return ref.then(() => new NodeFire(ref, {
+          scope: this.$scope,
+          host: this.$host,
+        }));
       });
     }
   }
@@ -748,7 +772,10 @@ function runGenerator(o) {
 function wrapNodeFire(method) {
   NodeFire.prototype[method] = function() {
     return new NodeFire(
-      this.$ref[method].apply(this.$ref, arguments), this.$scope, this.$host);
+      this.$ref[method].apply(this.$ref, arguments), {
+        scope: this.$scope,
+        host: this.$host,
+      });
   };
 }
 
