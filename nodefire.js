@@ -119,11 +119,19 @@ class NodeFire {
   }
 
   /**
+   * Returns the database instance corresponding to this reference.
+   * @return {admin.database.Database} The database instance corresponding to this reference.
+   */
+  get database() {
+    return this.$ref.ref.database;
+  }
+
+  /**
    * Returns the last part of this reference's path. The key of a root reference is `null`.
    * @return {string|null} The last part this reference's path.
    */
   get key() {
-    return this.$ref.key;
+    return this.$ref.ref.key;
   }
 
   /**
@@ -131,7 +139,7 @@ class NodeFire {
    * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
    */
   get path() {
-    return decodeURIComponent(this.$ref.toString()).slice(this.$ref.root.toString().length - 1);
+    return decodeURIComponent(this.$ref.toString()).slice(this.$ref.ref.root.toString().length - 1);
   }
 
   /**
@@ -154,10 +162,10 @@ class NodeFire {
    * @return {NodeFire} The root reference of the database.
    */
   get root() {
-    if (this.$ref.isEqual(this.$ref.root)) {
+    if (this.$ref.isEqual(this.$ref.ref.root)) {
       return this;
     } else {
-      return new NodeFire(this.$ref.root, {
+      return new NodeFire(this.$ref.ref.root, {
         scope: this.$scope,
         host: this.$host,
       });
@@ -170,10 +178,10 @@ class NodeFire {
    * @return {NodeFire|null} The parent location of this reference.
    */
   get parent() {
-    if (this.$ref.parent === null) {
+    if (this.$ref.ref.parent === null) {
       return null;
     } else {
-      return new NodeFire(this.$ref.parent, {
+      return new NodeFire(this.$ref.ref.parent, {
         scope: this.$scope,
         host: this.$host,
       });
