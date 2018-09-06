@@ -541,7 +541,7 @@ class NodeFire {
   on(eventType, callback, cancelCallback, context) {
     cancelCallback = wrapReject(this, 'on', cancelCallback);
     this.$ref.on(
-      eventType, captureCallback(this, eventType, callback), cancelCallback, context);
+      eventType, captureCallback(this, eventType, callback, context), cancelCallback, context);
     return callback;
   }
 
@@ -750,12 +750,12 @@ wrapNodeFire('orderByValue');
 // wrapper function in case the user calls off().  We don't reuse wrappers so that the number of
 // wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
 // call to off().
-function captureCallback(nodeFire, eventType, callback) {
+function captureCallback(nodeFire, eventType, callback, context) {
   const key = eventType + '::' + nodeFire.toString();
   callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || {};
   callback.$nodeFireCallbacks[key] = callback.$nodeFireCallbacks[key] || [];
   const nodeFireCallback = function(snap, previousChildKey) {
-    runGenerator(callback.call(this, new Snapshot(snap, nodeFire), previousChildKey));
+    runGenerator(callback.call(context || this, new Snapshot(snap, nodeFire), previousChildKey));
   };
   callback.$nodeFireCallbacks[key].push(nodeFireCallback);
   return nodeFireCallback;
