@@ -625,7 +625,7 @@ class NodeFire {
     if (enable === NodeFire.ROLLING) {
       return require('firebase-rolling-log');
     } else {
-      Firebase.enableLogging(enable);
+      admin.database.enableLogging(enable);
     }
   }
 
