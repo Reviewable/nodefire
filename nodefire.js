@@ -614,19 +614,10 @@ class NodeFire {
 
   /**
    * Turns Firebase low-level connection logging on or off.
-   * @param {boolean | ROLLING} enable Whether to enable or disable logging, or enable rolling logs.
-   *        Rolling logs can only be enabled once; any further calls to enableFirebaseLogging will
-   *        disable them permanently.
-   * @returns If ROLLING logs were requested, returns a handle to FirebaseRollingLog (see
-   *          https://github.com/mikelehen/firebase-rolling-log for details).  Otherwise returns
-   *          nothing.
+   * @param {boolean} enable Whether to enable or disable logging.
    */
   static enableFirebaseLogging(enable) {
-    if (enable === NodeFire.ROLLING) {
-      return require('firebase-rolling-log');
-    } else {
-      Firebase.enableLogging(enable);
-    }
+    admin.database.enableLogging(enable);
   }
 
   /**
@@ -728,12 +719,6 @@ class NodeFire {
  * @type {boolean} True to log metadata about every transaction.
  */
 NodeFire.LOG_TRANSACTIONS = false;
-
-/**
- * A special constant that you can pass to enableFirebaseLogging to keep a rolling buffer of
- * Firebase logs without polluting the console, to be grabbed and saved only when needed.
- */
-NodeFire.ROLLING = {};
 
 /* Query methods, same as on Firebase objects. */
 wrapNodeFire('limitToFirst');
