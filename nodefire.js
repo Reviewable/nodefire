@@ -4,6 +4,8 @@ const admin = require('firebase-admin');
 const _ = require('lodash');
 const url = require('url');
 const request = require('request');
+const Firebase = require('firebase');
+const FirebaseTokenGenerator = require('firebase-token-generator');
 const LRUCache = require('lru-cache');
 
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
@@ -27,7 +29,11 @@ class Snapshot {
   }
 
   get ref() {
-    return new NodeFire(this.$snap.ref, this.$nodeFire.$scope, this.$nodeFire.$host);
+    return new NodeFire(this.$snap.ref, {
+      scope: this.$nodeFire.$scope,
+      host: this.$nodeFire.$host,
+      debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+    });
   }
 
   val() {
@@ -75,6 +81,8 @@ class NodeFire {
    * @param {admin.database.Query} ref A fully authenticated Firebase reference or query.
    * @param {Object} options Optional dictionary containing options.
    * @param {Object} options.scope Optional dictionary that will be used for interpolating paths.
+   * @param {boolean} options.debugPermissionDeniedErrors Whether or not to debug permission denied
+   *     errors. Defaults to false.
    * @param {string} options.host For internal use only, do not pass.
    */
   constructor(ref, options = {}) {
@@ -94,6 +102,11 @@ class NodeFire {
 
     this.$scope = options.scope || {};
     this.$host = options.host || url.parse(this.$ref.toString()).host;
+    this.$debugPermissionDeniedErrors = options.debugPermissionDeniedErrors || false;
+
+    if (this.$debugPermissionDeniedErrors) {
+      this.debugPermissionDeniedErrors();
+    }
 
     if (!(this.$host in serverTimeOffsets)) {
       serverTimeOffsets[this.$host] = 0;
@@ -116,6 +129,14 @@ class NodeFire {
   }
 
   /**
+   * Returns the database corresponding to this reference.
+   * @return {Database} The database corresponding to this reference.
+   */
+  get database() {
+    return this.$ref.ref.database;
+  }
+
+  /**
    * Returns the last part of this reference's path. The key of a root reference is `null`.
    * @return {string|null} The last part this reference's path.
    */
@@ -128,7 +149,7 @@ class NodeFire {
    * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
    */
   get path() {
-    return decodeURIComponent(this.$ref.toString()).slice(this.$ref.root.toString().length - 1);
+    return decodeURIComponent(this.$ref.toString()).slice(this.$ref.ref.root.toString().length - 1);
   }
 
   /**
@@ -139,7 +160,11 @@ class NodeFire {
     if (this.$ref.isEqual(this.$ref.ref)) {
       return this;
     } else {
-      return new NodeFire(this.$ref.ref, this.$scope, this.$host);
+      return new NodeFire(this.$ref.ref, {
+        scope: this.$scope,
+        host: this.$host,
+        debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+      });
     }
   }
 
@@ -151,7 +176,11 @@ class NodeFire {
     if (this.$ref.isEqual(this.$ref.root)) {
       return this;
     } else {
-      return new NodeFire(this.$ref.root, this.$scope, this.$host);
+      return new NodeFire(this.$ref.root, {
+        scope: this.$scope,
+        host: this.$host,
+        debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+      });
     }
   }
 
@@ -164,7 +193,11 @@ class NodeFire {
     if (this.$ref.parent === null) {
       return null;
     } else {
-      return new NodeFire(this.$ref.parent, this.$scope, this.$host);
+      return new NodeFire(this.$ref.parent, {
+        scope: this.$scope,
+        host: this.$host,
+        debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+      });
     }
   }
 
@@ -196,6 +229,85 @@ class NodeFire {
       return NodeFire.escape(value);
     });
     return string;
+  }
+
+  debugPermissionDeniedErrors() {
+    this.debugWrapOnErrorCallback('on', 2);
+    this.debugWrapOnErrorCallback('remove', 1);
+    this.debugWrapOnErrorCallback('set', 2);
+    this.debugWrapOnErrorCallback('push', 2);
+    this.debugWrapOnErrorCallback('update', 2);
+
+    this.debugWrapPromise('get');
+    this.debugWrapPromise('remove');
+    this.debugWrapPromise('childrenKeys');
+    this.debugWrapPromise('set', /* passFirstArg */ true);
+    this.debugWrapPromise('update', /* passFirstArg */ true);
+    // this.debugWrapPromise('transaction');
+  }
+
+  debugWrapPromise(methodName, passFirstArg = false) {
+    const self = this;
+    const originalMethod = this[methodName];
+    this[methodName] = function() {
+      return originalMethod.apply(self, arguments).catch((error) => {
+        let promise = Promise.resolve();
+        if (error.code.toLowerCase() === 'permission_denied') {
+          if (passFirstArg) {
+            const args = Array.prototype.slice.call(arguments);
+            promise = simulateDebugFirebaseClientCall(self.$ref, methodName, args[0]);
+          } else {
+            promise = simulateDebugFirebaseClientCall(self.$ref, methodName);
+          }
+        }
+
+        return promise.then(() => {
+          throw error;
+        }).catch(() => {
+          throw error;
+        });
+      })
+    }
+  }
+
+  debugWrapOnErrorCallback(methodName, onErrorCallbackArgIndex, passFirstArg = false) {
+    const self = this;
+    const originalMethod = this[methodName];
+    this[methodName] = function() {
+        const args = Array.prototype.slice.call(arguments);
+
+        // Get the original on error callback if provided. Otherwise, deafult to an empty function.
+        let originalOnErrorCallback;
+        if (args.length <= onErrorCallbackArgIndex) {
+          originalOnErrorCallback = args[onErrorCallbackArgIndex]
+        } else {
+          originalOnErrorCallback = function () {};
+        }
+
+        // Wrap the on error callback, simulating the debug write.
+        const wrappedOnErrorCallback = function(error) {
+          let promise = Promise.resolve();
+          if (error.code.toLowerCase() === 'permission_denied') {
+            if (passFirstArg) {
+              promise = simulateDebugFirebaseClientCall(self.$ref, methodName, args[0]);
+            } else {
+              promise = simulateDebugFirebaseClientCall(self.$ref, methodName);
+            }
+          }
+
+          return promise.then(() => {
+            originalOnErrorCallback(error);
+          }).catch(() => {
+            originalOnErrorCallback(error);
+          });
+        }
+
+        // Replace the original on error callback with the new wrapped on error callback;
+        args[onErrorCallbackArgIndex] = wrappedOnErrorCallback;
+
+        // Call the method as usual.
+        return originalMethod.apply(self, args);
+    }
   }
 
   // TODO: add onDisconnect
@@ -232,7 +344,11 @@ class NodeFire {
    * @return {NodeFire} A new NodeFire object with the same reference and new scope.
    */
   scope(scope) {
-    return new NodeFire(this.$ref, _.extend(_.clone(this.$scope), scope), this.$host);
+    return new NodeFire(this.$ref, {
+      scope: _.extend(_.clone(this.$scope), scope),
+      host: this.$host,
+      debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+    });
   }
 
   /**
@@ -246,7 +362,11 @@ class NodeFire {
    */
   child(path, scope) {
     const child = this.scope(scope);
-    return new NodeFire(this.$ref.child(child.interpolate(path)), child.$scope, this.$host);
+    return new NodeFire(this.$ref.child(child.interpolate(path)), {
+      scope: child.$scope,
+      host: this.$host,
+      debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+    });
   }
 
   /**
@@ -342,11 +462,19 @@ class NodeFire {
    */
   push(value, options) {
     if (value === undefined || value === null) {
-      return new NodeFire(this.$ref.push(), this.$scope, this.$host);
+      return new NodeFire(this.$ref.push(), {
+        scope: this.$scope,
+        host: this.$host,
+        debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+      });
     } else {
       return invoke({ref: this, method: 'push', args: [value]}, options, options => {
         const ref = this.$ref.push(value);
-        return ref.then(() => new NodeFire(ref, this.$scope, this.$host));
+        return ref.then(() => new NodeFire(ref, {
+          scope: this.$scope,
+          host: this.$host,
+          debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+        }));
       });
     }
   }
@@ -460,7 +588,12 @@ class NodeFire {
                 }}));
               }
               if (error) {
-                wrappedReject(error);
+                let p = Promise.resolve();
+                if (error.message.toLowerCase() === 'permission_denied') {
+                  const {ref, args, method} = op;
+                  p = simulateDebugFirebaseClientCall(self.$ref, 'transaction', result);
+                }
+                p.then(() => wrappedReject(error));
               } else if (committed) {
                 resolve(getNormalValue(snap));
               } else {
@@ -487,7 +620,15 @@ class NodeFire {
           // ref.
           self.cache();
           onceTxn = _.once(txn);
-          self.$ref.on('value', onceTxn, wrappedRejectNoResult);
+          self.$ref.on('value', onceTxn, (error) => {
+            let p = Promise.resolve();
+            if (error.code.toLowerCase() === 'permission_denied') {
+              const {ref, args, method} = op;
+              p = simulateDebugFirebaseClientCall(self.$ref, 'transaction', result);
+            }
+
+            p.then(() => wrappedRejectNoResult(error));
+          });
         } else {
           txn();
         }
@@ -748,7 +889,11 @@ function runGenerator(o) {
 function wrapNodeFire(method) {
   NodeFire.prototype[method] = function() {
     return new NodeFire(
-      this.$ref[method].apply(this.$ref, arguments), this.$scope, this.$host);
+      this.$ref[method].apply(this.$ref, arguments), {
+        scope: this.$scope,
+        host: this.$host,
+        debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
+      });
   };
 }
 
@@ -830,6 +975,128 @@ function getNormalRawValue(value) {
     });
   }
   return value;
+}
+
+function generateDebugToken() {
+  const tokenGenerator = new FirebaseTokenGenerator('XseM09IkJtM3qtnfPWgVng0ZDdBbQ03i56kvEjFH');
+  return tokenGenerator.createToken({uid: 'test'}, {simulate: true, debug: true});
+}
+
+function makeRestRequest(ref, clientMethodName, jsonBody) {
+  let httpMethod;
+  let includeBody;
+  switch (clientMethodName) {
+    case 'get':
+    case 'on':
+    case 'once':
+      httpMethod = 'GET';
+      includeBody = false;
+      break;
+    case 'set':
+      httpMethod = 'PUT';
+      includeBody = true;
+      break;
+    case 'push':
+      httpMethod = 'POST';
+      includeBody = true;
+      break;
+    case 'update':
+      httpMethod = 'PATCH';
+      includeBody = true;
+      break;
+    case 'remove':
+      httpMethod = 'DELETE';
+      includeBody = false;
+      break;
+    default:
+      throw new Error('Invalid client method name provided.');
+  }
+
+  const options = {
+    method: httpMethod,
+    // Note: Query instances return a string which DOES NOT contain any query parameters. This is
+    // okay since Security Rules do not use query parameters to determine permissions.
+    url: `${ref.toString()}.json`,
+    qs: {
+      auth: generateDebugToken(),
+    },
+    json: true,
+  }
+
+  if (includeBody) {
+    options.body = jsonBody;
+  }
+
+  return new Promise((resolve, reject) => {
+    request(options, (error, response, body) => {
+      if (error !== null) {
+        reject(error);
+      } else {
+        console.log('RAW DEBUG INFO:', JSON.stringify(response.headers['x-firebase-auth-debug']));
+        resolve();
+      }
+    });
+  });
+}
+
+function simulateDebugFirebaseClientCall(ref, clientMethodName, dataToWrite) {
+  const debugRef = new Firebase(ref.toString());
+  
+  return new Promise((resolve, reject) => {
+    debugRef.authWithCustomToken(generateDebugToken(), (error, authData) => {
+      if (error) {
+        reject(error);
+      } else {
+        switch (clientMethodName) {
+          case 'get':
+          case 'on':
+          case 'once':
+            debugRef.once('value', (snap) => {
+              resolve(snap.val());
+            }, (error) => {
+              reject(error);
+            })
+            break;
+          case 'set':
+          case 'push':
+          case 'update':
+            debugRef[clientMethodName](dataToWrite, (error) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve();
+              }
+            });
+            break;
+          case 'remove':
+            debugRef.remove((error) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve();
+              }
+            });
+            break;
+          case 'transaction':
+            debugRef.once('value', (snap) => {
+              debugRef.set(dataToWrite, (error) => {
+                if (error) {
+                  reject(error);
+                } else {
+                  resolve();
+                }
+              });
+            }, (error) => {
+              reject(error);
+            })
+            break;
+
+          default:
+            throw new Error('Method cannot be simulated: Invalid method name provided.');
+        }
+      }
+    });
+  });
 }
 
 function invoke(op, options = {}, fn) {
