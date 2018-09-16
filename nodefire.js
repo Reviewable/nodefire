@@ -129,8 +129,8 @@ class NodeFire {
   }
 
   /**
-   * Returns the database corresponding to this reference.
-   * @return {Database} The database corresponding to this reference.
+   * Returns the database instance corresponding to this reference.
+   * @return {admin.database.Database} The database instance corresponding to this reference.
    */
   get database() {
     return this.$ref.ref.database;
@@ -141,7 +141,7 @@ class NodeFire {
    * @return {string|null} The last part this reference's path.
    */
   get key() {
-    return this.$ref.key;
+    return this.$ref.ref.key;
   }
 
   /**
@@ -173,10 +173,10 @@ class NodeFire {
    * @return {NodeFire} The root reference of the database.
    */
   get root() {
-    if (this.$ref.isEqual(this.$ref.root)) {
+    if (this.$ref.isEqual(this.$ref.ref.root)) {
       return this;
     } else {
-      return new NodeFire(this.$ref.root, {
+      return new NodeFire(this.$ref.ref.root, {
         scope: this.$scope,
         host: this.$host,
         debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
@@ -190,10 +190,10 @@ class NodeFire {
    * @return {NodeFire|null} The parent location of this reference.
    */
   get parent() {
-    if (this.$ref.parent === null) {
+    if (this.$ref.ref.parent === null) {
       return null;
     } else {
-      return new NodeFire(this.$ref.parent, {
+      return new NodeFire(this.$ref.ref.parent, {
         scope: this.$scope,
         host: this.$host,
         debugPermissionDeniedErrors: this.$debugPermissionDeniedErrors,
@@ -723,19 +723,10 @@ class NodeFire {
 
   /**
    * Turns Firebase low-level connection logging on or off.
-   * @param {boolean | ROLLING} enable Whether to enable or disable logging, or enable rolling logs.
-   *        Rolling logs can only be enabled once; any further calls to enableFirebaseLogging will
-   *        disable them permanently.
-   * @returns If ROLLING logs were requested, returns a handle to FirebaseRollingLog (see
-   *          https://github.com/mikelehen/firebase-rolling-log for details).  Otherwise returns
-   *          nothing.
+   * @param {boolean} enable Whether to enable or disable logging.
    */
   static enableFirebaseLogging(enable) {
-    if (enable === NodeFire.ROLLING) {
-      return require('firebase-rolling-log');
-    } else {
-      Firebase.enableLogging(enable);
-    }
+    admin.database.enableLogging(enable);
   }
 
   /**
@@ -837,12 +828,6 @@ class NodeFire {
  * @type {boolean} True to log metadata about every transaction.
  */
 NodeFire.LOG_TRANSACTIONS = false;
-
-/**
- * A special constant that you can pass to enableFirebaseLogging to keep a rolling buffer of
- * Firebase logs without polluting the console, to be grabbed and saved only when needed.
- */
-NodeFire.ROLLING = {};
 
 /* Query methods, same as on Firebase objects. */
 wrapNodeFire('limitToFirst');

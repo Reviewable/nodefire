@@ -25,10 +25,9 @@
   },
   "homepage": "https://github.com/pkaminski/nodefire",
   "dependencies": {
-    "firebase": "^2.4.2",
-    "firebase-admin": "^5.13.1",
-    "firebase-rolling-log": "^0.2.0",
-    "firebase-token-generator": "^2.0.0",
+    "firebase": "2.4.2",
+    "firebase-admin": "5.x.x || 6.x.x",
+    "firebase-token-generator": "2.0.0",
     "lodash": "^3.10.1",
     "lru-cache": "^4.0.0",
     "request": "^2.87.0"
