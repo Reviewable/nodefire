@@ -15,6 +15,9 @@ const serviceAccount = require(pathToServiceAccount);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`,
+  databaseAuthVariableOverride: {
+    uid: 'test',
+  }
 });
 
 module.exports = admin;
