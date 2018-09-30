@@ -1,7 +1,6 @@
 const _ = require('lodash');
 const assert = require('assert');
 
-const utils = require('./utils');
 const admin = require('./loadFirebase');
 const NodeFire = require('../nodefire.js');
 
@@ -64,9 +63,8 @@ return randomRef.set(mockData)
   .then(() => randomRef.get())
   .then((val) => {
     assert(_.isEqual(mockData, val), `Data fetched should equal data set`);
-    return utils.fetchAccessToken();
+    return randomRef.childrenKeys();
   })
-  .then((accessToken) => randomRef.childrenKeys({accessToken}))
   .then((keys) => {
     assert(_.isEqual(keys.sort(), Object.keys(mockData).sort()), 'Children keys should return top-level keys');
     return randomRef.child('four').update({six: null, seven: false});
