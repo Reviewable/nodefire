@@ -45,7 +45,6 @@ assert(rootRef.path === '/', `rootRef.path should be "/"`);
 assert(barRef.path === '/foo/bar', `barRef.path should be "/foo/bar"`);
 assert(barQueryRef.path === '/foo/bar', `barQueryRef.path should be "/foo/bar"`);
 
-
 let accessToken;
 
 const mockData = {
@@ -63,7 +62,7 @@ return randomRef.set(mockData)
   .then(() => randomRef.get())
   .then((val) => {
     assert(_.isEqual(mockData, val), `Data fetched should equal data set`);
-    return randomRef.childrenKeys();
+    return randomRef.childrenKeys({maxTries: 5});
   })
   .then((keys) => {
     assert(_.isEqual(keys.sort(), Object.keys(mockData).sort()), 'Children keys should return top-level keys');
