@@ -799,9 +799,11 @@ firebase-admin@^5.12.1:
     jsonwebtoken "8.1.0"
     node-forge "0.7.4"
 
-firebase-rolling-log@^0.2.0:
-  version "0.2.0"
-  resolved "https://registry.yarnpkg.com/firebase-rolling-log/-/firebase-rolling-log-0.2.0.tgz#dd358e1926347f76305efd108a1ae7c385c00685"
+firebase-childrenkeys@^1.1.0:
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/firebase-childrenkeys/-/firebase-childrenkeys-1.1.0.tgz#3fb68ac6a2d0c4262e0d89d6fc8b4e9a45b1c2a3"
+  dependencies:
+    request "^2.81.0"
 
 follow-redirects@^1.3.0:
   version "1.5.1"
