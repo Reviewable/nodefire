@@ -58,11 +58,10 @@ delegateSnapshot('numChildren');
 
 
 /**
- * A wrapper around a Firebase reference, and the main entry point to the module.  You can pretty
- * much use this class as you would use the Firebase class.  The two major differences are:
- * 1) Most methods return promises, which you use instead of callbacks.
- * 2) Each NodeFire object has a scope dictionary associated with it that's used to interpolate any
- *    path used in a call.
+ * A wrapper around a Firebase Admin reference, and the main entry point to the module.  You can
+ * pretty much use this class as you would use the Firebase class.  The major difference is that
+ * each NodeFire object has a scope dictionary associated with it that's used to interpolate any
+ * path used in a call.
  *
  * Every method that returns a promise also accepts an options object as the last argument.  One
  * standard option is `timeout`, which will cause an operation to time out after the given number of
@@ -73,9 +72,9 @@ class NodeFire {
 // jshint latedef:nofunc
 
   /**
-   * Creates a new NodeFire wrapper around a raw Firebase reference.
+   * Creates a new NodeFire wrapper around a raw Firebase Admin reference.
    *
-   * @param {admin.database.Query} ref A fully authenticated Firebase reference or query.
+   * @param {admin.database.Query} ref A fully authenticated Firebase Admin reference or query.
    * @param {Object} options Optional dictionary containing options.
    * @param {Object} options.scope Optional dictionary that will be used for interpolating paths.
    * @param {string} options.host For internal use only, do not pass.
@@ -230,7 +229,7 @@ class NodeFire {
   }
 
   /**
-   * Returns whether or not this Firebase reference is equivalent to the provided Firebase reference.
+   * Returns whether or not this NodeFire instance is equivalent to the provided NodeFire instance.
    * @return {NodeFire} Another NodeFire instance against which to compare.
    */
   isEqual(otherRef) {
