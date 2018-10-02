@@ -3,36 +3,50 @@ NodeFire
 
 [![Project Status: Active - The project has reached a stable, usable state and is being actively developed.](http://www.repostatus.org/badges/latest/active.svg)](http://www.repostatus.org/#active)
 
-NodeFire is a Firebase library for NodeJS that has a pretty similar API but adds the following features:
+NodeFire expands the [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup) with the
+following features:
 
-1. Most methods return a promise, instead of requiring a callback.  This works especially nicely with a framework like `co`, allowing you to control data flow with `yield` statements.
-2. Any paths passed in are treated as templates and interpolated within an implicit or explicit scope, avoiding manual (and error-prone) string concatenation.  Characters forbidden by Firebase are automatically escaped.
-3. Since one-time fetches of a reference are common in server code, a new `get` method makes them easy and an optional LRU cache keeps the most used ones pinned and synced to reduce latency.
-4. Transactions prefetch the current value of the reference to avoid having every transaction re-executed at least twice.
-5. In debug mode, traces are printed for failed security rule checks (and only failed ones).
+1. Any paths passed in are treated as templates and interpolated within an implicit or explicit scope, avoiding manual (and error-prone) string concatenation.  Characters forbidden by Firebase are automatically escaped.
+1. Since one-time fetches of a reference are common in server code, a new `get` method makes them easy and an optional LRU cache keeps the most used ones pinned and synced to reduce latency.
+1. Transactions prefetch the current value of the reference to avoid having every transaction re-executed at least twice.
 
 If you'd like to be able to use generators as `on` or `once` callbacks, make sure to set `Promise.on` to a `co`-compatible function.
 
 ## Example
 
 ```javascript
-var co = require('co');
-var NodeFire = require('nodefire');
+const co = require('co');
+const admin = require('firebase-admin');
+const NodeFire = require('nodefire');
+
 NodeFire.setCacheSize(10);
-NodeFire.DEBUG = true;
-var db = new NodeFire('https://example.firebaseio.com/');
-co((function*() {
-  yield db.auth('secret', {uid: 'server01'});
-  var stuff = db.child('stuffs', {foo: 'bar', baz: {qux: 42}});
-  var data = yield {
-    theFoo: stuff.child('foos/:foo').get(),
-    theUser: stuff.root().child('users/{baz.qux}').get()
-  };
-  yield [
-    stuff.child('bars/:foo/{theUser.username}', data).set(data.theFoo.bar),
-    stuff.child('counters/:foo').transaction(function(value) {return value + 1;})
-  ];
-})());
+
+admin.initializeApp(
+  // ...
+);
+
+const db = new NodeFire(admin.database().ref())
+
+co(
+  (function*() {
+    var stuff = db.child('stuffs', {
+      foo: 'bar',
+      baz: {
+        qux: 42
+      }
+    });
+
+    var data = yield {
+      theFoo: stuff.child('foos/:foo').get(),
+      theUser: stuff.root.child('users/{baz.qux}').get(),
+    };
+    
+    yield [
+      stuff.child('counters/:foo').transaction((value) => value + 1),
+      stuff.child('bars/:foo/{theUser.username}', data).set(data.theFoo.bar),
+    ];
+  })()
+);
 ```
 
 ## API
@@ -41,11 +55,10 @@ This is reproduced from the source code, which is authoritative.
 
 ```javascript
 /**
- * A wrapper around a Firebase reference, and the main entry point to the module.  You can pretty
- * much use this class as you would use the Firebase class.  The two major differences are:
- * 1) Most methods return promises, which you use instead of callbacks.
- * 2) Each NodeFire object has a scope dictionary associated with it that's used to interpolate any
- *    path used in a call.
+ * A wrapper around a Firebase Admin reference, and the main entry point to the module.  You can
+ * pretty much use this class as you would use the Firebase class.  The major difference is that
+ * each NodeFire object has a scope dictionary associated with it that's used to interpolate any
+ * path used in a call.
  *
  * Every method that returns a promise also accepts an options object as the last argument.  One
  * standard option is `timeout`, which will cause an operation to time out after the given number of
@@ -54,14 +67,14 @@ This is reproduced from the source code, which is authoritative.
 class NodeFire;
 
 /**
- * Creates a new NodeFire wrapper around a raw Firebase reference.
+ * Creates a new NodeFire wrapper around a raw Firebase Admin reference.
  *
- * @param {string || Firebase} refOrUrl The Firebase URL (or Firebase reference instance) that this
- *     object will represent.
- * @param {Object} scope Optional dictionary that will be used for interpolating paths.
- * @param {string} host For internal use only, do not pass.
+ * @param {admin.database.Query} refOrUrl A fully authenticated Firebase Admin reference or query.
+ * @param {Object} options Optional dictionary containing options.
+  * @param {Object} options.scope Optional dictionary that will be used for interpolating paths.
+  * @param {string} options.host For internal use only, do not pass.
  */
-constructor(refOrUrl, scope, host)
+constructor(ref, options)
 
 /**
  * Flag that indicates whether to log transactions and the number of tries needed.
@@ -70,24 +83,15 @@ constructor(refOrUrl, scope, host)
 static LOG_TRANSACTIONS = false
 
 /**
- * A special constant that you can pass to enableFirebaseLogging to keep a rolling buffer of
- * Firebase logs without polluting the console, to be grabbed and saved only when needed.
+ * Returns a placeholder value for auto-populating the current timestamp (time since the Unix
+ * epoch, in milliseconds) as determined by the Firebase servers.
+ * @return {Object} A timestamp placeholder value.
  */
-static ROLLING
-
-/* Some static methods copied over from the Firebase class. */
-static goOffline()
-static goOnline()
-static ServerValue
+static SERVER_TIMESTAMP
 
 /**
- * Turn Firebase low-level connection logging on or off.
- * @param {boolean | ROLLING} enable Whether to enable or disable logging, or enable rolling logs.
- *        Rolling logs can only be enabled once; any further calls to enableFirebaseLogging will
- *        disable them permanently.
- * @returns If ROLLING logs were requested, returns a handle to FirebaseRollingLog (see
- *          https://github.com/mikelehen/firebase-rolling-log for details).  Otherwise returns
- *          nothing.
+ * Turns Firebase low-level connection logging on or off.
+ * @param {boolean} enable Whether to enable or disable logging.
  */
 static enableFirebaseLogging(enable)
 
@@ -139,6 +143,34 @@ static getCacheHitRate()
 static resetCacheHitRate()
 
 /**
+ * Escapes a string to make it an acceptable Firebase key.
+ * @param {string} key The proposed key to escape.
+ * @return {string} The escaped key.
+ */
+static escape(key)
+
+/**
+ * Unescapes a previously escaped (or interpolated) key.
+ * @param {string} key The key to unescape.
+ * @return {string} The original unescaped key.
+ */
+static unescape(key)
+
+/**
+ * @property {string} The path component of the reference's URL.
+ */
+path
+
+/**
+ * Properties which work the same as the standard Firebase Admin SDK.
+ */
+key
+ref
+root
+parent
+database
+
+/**
  * Interpolates variables into a template string based on the object's scope (passed into the
  * constructor, if any) and the optional scope argument.  Characters forbidden by Firebase are
  * escaped into a "\xx" hex format.
@@ -151,24 +183,6 @@ static resetCacheHitRate()
  * @return {string} The interpolated string
  */
 interpolate(string, scope)
-
-/**
- * Authenticates with Firebase, using either a secret or a custom token.
- * @param  {string} secret A secret for the Firebase referenced by this NodeFire object (copy from
- *     the Firebase dashboard).
- * @param  {Object} authObject Optional.  If provided, instead of authenticating with the secret
- *     directly (which disables all security checks), we'll generate a custom token with the auth
- *     value provided here and an expiry far in the future.
- * @return {Promise} A promise that is resolved when the authentication has completed successfully,
- *     and rejected with an error if it failed.
- */
-auth(secret, authObject)
-
-/**
- * Unauthenticates from Firebase.
- * @return {Promise} A resolved promise (for consistency, since unauthentication is immediate).
- */
-unauth()
 
 /**
  * Creates a new NodeFire object on the same reference, but with an extended interpolation scope.
@@ -217,15 +231,6 @@ uncache()
  *     error.
  */
 set(value)
-
-/**
- * Sets the priority at this reference.  Useful because you can't pass a ".priority" key to
- * update().
- * @param {string || number} priority The priority for the data at this reference.
- * @returns {Promise} A promise that is resolved when the priority has been set, or rejected with an
- *     error.
- */
-setPriority(priority)
 
 /**
  * Updates a value at this reference, setting only the top-level keys supplied and leaving any other
@@ -278,6 +283,18 @@ push(value)
 transaction(updateFunction, options)
 
 /**
+ * Fetches the keys of the current reference's children without also fetching all the contents,
+ * using the Firebase REST API.
+ * 
+ * @param options An options object with the following items, all optional:
+ *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient errors
+ *               (defaults to 1)
+ *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
+ * @return A promise that resolves to an array of key strings.
+ */
+childrenKeys(options)
+
+/**
  * Generates a unique string that can be used as a key in Firebase.
  * @return {string} A unique string that satisfies Firebase's key syntax constraints.
  */
@@ -290,17 +307,14 @@ generateUniqueKey()
 now()
 
 /**
- * Returns just the path component of the reference's URL.
- * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
+ * Returns whether or not this NodeFire instance is equivalent to the provided NodeFire instance.
+ * @return {NodeFire} Another NodeFire instance against which to compare.
  */
-path()
+isEqual()
 
 /* Some methods that work the same as on Firebase objects. */
-parent()
-root()
+toJSON()
 toString()
-key()
-ref()
 
 /* Listener registration methods.  They work the same as on Firebase objects, except that the
    snapshot passed into the callback (and forEach) is wrapped such that:
@@ -312,13 +326,13 @@ ref()
 on(eventType, callback, cancelCallback, context)
 off(eventType, callback, context)
 
-/* Query methods, same as on Firebase objects. */
+/* Query methods which work the same as in the Firebase Admin SDK. */
 limitToFirst(limit)
 limitToLast(limit)
-startAt(priority, name)
-endAt(priority, name)
+startAt(value, key)
+endAt(value, key)
 equalTo(value, key)
-orderByChild(key)
+orderByChild(path)
 orderByKey()
-orderByPriority()
+orderByValue()
 ```
