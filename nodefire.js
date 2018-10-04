@@ -579,7 +579,9 @@ class NodeFire {
    * @return A promise that resolves to an array of key strings.
    */
   childrenKeys() {
-    return firebaseChildrenKeys(this.$ref, ...arguments);
+    return this.$ref.childrenKeys
+      ? this.$ref.childrenKeys(...arguments)
+      : firebaseChildrenKeys(this.$ref, ...arguments);
   };
 
   /**
