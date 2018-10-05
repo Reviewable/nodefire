@@ -5,9 +5,10 @@ const _ = require('lodash');
 const url = require('url');
 const LRUCache = require('lru-cache');
 const firebaseChildrenKeys = require('firebase-childrenkeys');
+const firefight = require('firefight');
 
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
-const serverTimeOffsets = {}, serverDisconnects = {};
+const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors = [];
 
 
@@ -538,6 +539,22 @@ class NodeFire {
   }
 
   /**
+   * Turns debugging of permission denied errors on and off for the database this ref is attached
+   * to.  When turned on, permission denied errors will have an additional permissionTrace property
+   * with a human-readable description of which security rules failed.  There's no performance
+   * penalty to turning this on until a permission actually gets denied.
+   * @param {string} legacySecret A legacy database secret, needed to access the old API that allows
+   *     simulating request with debug feedback.  Pass a falsy value to turn off debugging.
+   */
+  enablePermissionDebugging(legacySecret) {
+    if (legacySecret) {
+      simulators[this.$host] = new firefight.Simulator(this.database, legacySecret);
+    } else {
+      delete simulators[this.$host];
+    }
+  }
+
+  /**
    * Adds an intercepting callback before all NodeFire database operations.  This callback can
    * modify the operation's options or block it while performing other work.
    * @param {Function} callback The callback to invoke before each operation.  It will be passed two
@@ -764,7 +781,13 @@ function wrapReject(nodefire, method, value, reject) {
       delete error.inputValues;
     }
     error.message = 'Firebase: ' + error.message;
-    reject(error);
+    const simulator = simulators[nodefire.$host];
+    if (!simulator || !simulator.isPermissionDenied(error)) return reject(error);
+    const authOverride = nodefire.database.app.options.databaseAuthVariableOverride;
+    simulator.auth(authOverride)[method](error.firebase.value).then(explanation => {
+      error.firebase.permissionTrace = explanation;
+      reject(error);
+    });
   };
 }
 
@@ -849,7 +872,15 @@ function invoke(op, options = {}, fn) {
           op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg)
       };
       e.message = 'Firebase: ' + e.message;
-      return Promise.reject(e);
+      const simulator = simulators[op.ref.$host];
+      if (!simulator || !simulator.isPermissionDenied(e)) return Promise.reject(e);
+      const method = op.method === 'get' ? 'once' : op.method;
+      const value = op.args[0];
+      const authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
+      return simulator.auth(authOverride)[method](value).then(explanation => {
+        e.firebase.permissionTrace = explanation;
+        return Promise.reject(e);
+      });
     });
   });
 }
