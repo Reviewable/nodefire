@@ -4,7 +4,7 @@
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "index.js",
   "engines": {
-    "node": ">=6.0"
+    "node": ">=8.0"
   },
   "scripts": {
     "test": "node tests/runner.js"
@@ -32,6 +32,7 @@
     "request": "^2.87.0"
   },
   "devDependencies": {
+    "eslint": "^5.6.1",
     "googleapis": "^32.0.0"
   }
 }

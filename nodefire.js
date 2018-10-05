@@ -3,59 +3,12 @@
 const admin = require('firebase-admin');
 const _ = require('lodash');
 const url = require('url');
-const request = require('request');
 const LRUCache = require('lru-cache');
-const firebaseChildrenKeys = require('firebase-childrenkeys')
+const firebaseChildrenKeys = require('firebase-childrenkeys');
 
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {};
 const operationInterceptors = [];
-
-
-/**
-  A wrapper around a Firebase DataSnapshot.  Works just like a Firebase snapshot, except that
-  ref returns a NodeFire instance, val() normalizes the value, and child() takes an optional
-  refining scope.
- */
-class Snapshot {
-  constructor(snap, nodeFire) {
-    this.$snap = snap;
-    this.$nodeFire = nodeFire;
-  }
-
-  get key() {
-    return this.$snap.key;
-  }
-
-  get ref() {
-    return new NodeFire(this.$snap.ref, {
-      scope: this.$nodeFire.$scope,
-      host: this.$nodeFire.$host,
-    });
-  }
-
-  val() {
-    return getNormalValue(this.$snap);
-  }
-
-  child(path, scope) {
-    const childNodeFire = this.$nodeFire.scope(scope);
-    return new Snapshot(this.$snap.child(childNodeFire.interpolate(path)), childNodeFire);
-  }
-
-  forEach(callback) {
-    this.$snap.forEach(function(child) {
-      return callback(new Snapshot(child, this.$nodeFire));
-    });
-  }
-}
-
-/* Snapshot methods that work the same. */
-delegateSnapshot('toJSON');
-delegateSnapshot('exists');
-delegateSnapshot('hasChild');
-delegateSnapshot('hasChildren');
-delegateSnapshot('numChildren');
 
 
 /**
@@ -82,14 +35,16 @@ class NodeFire {
    */
   constructor(ref, options = {}) {
     const refIsNonNullObject = typeof ref === 'object' && ref !== null;
-    if (!refIsNonNullObject || typeof ref.ref !== 'object' || typeof ref.ref.transaction !== 'function') {
+    if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
+        typeof ref.ref.transaction !== 'function') {
       throw new Error(
-        `Expected first argument passed to NodeFire constructor to be a Firebase Database reference, 
+        `Expected first argument passed to NodeFire constructor to be a Firebase Database reference,
         but got "${ref}".`
       );
     } else if (typeof options !== 'object' || options === null) {
       throw new Error(
-        `Expected second argument passed to NodeFire constructor to be an object, but got "${options}".`
+        `Expected second argument passed to NodeFire constructor to be an object, ` +
+        `but got "${options}".`
       );
     }
 
@@ -147,14 +102,11 @@ class NodeFire {
    * @return {NodeFire|null} A NodeFire reference at the same location as this query or reference.
    */
   get ref() {
-    if (this.$ref.isEqual(this.$ref.ref)) {
-      return this;
-    } else {
-      return new NodeFire(this.$ref.ref, {
-        scope: this.$scope,
-        host: this.$host,
-      });
-    }
+    if (this.$ref.isEqual(this.$ref.ref)) return this;
+    return new NodeFire(this.$ref.ref, {
+      scope: this.$scope,
+      host: this.$host,
+    });
   }
 
   /**
@@ -162,14 +114,11 @@ class NodeFire {
    * @return {NodeFire} The root reference of the database.
    */
   get root() {
-    if (this.$ref.isEqual(this.$ref.ref.root)) {
-      return this;
-    } else {
-      return new NodeFire(this.$ref.ref.root, {
-        scope: this.$scope,
-        host: this.$host,
-      });
-    }
+    if (this.$ref.isEqual(this.$ref.ref.root)) return this;
+    return new NodeFire(this.$ref.ref.root, {
+      scope: this.$scope,
+      host: this.$host,
+    });
   }
 
   /**
@@ -178,14 +127,11 @@ class NodeFire {
    * @return {NodeFire|null} The parent location of this reference.
    */
   get parent() {
-    if (this.$ref.ref.parent === null) {
-      return null;
-    } else {
-      return new NodeFire(this.$ref.ref.parent, {
-        scope: this.$scope,
-        host: this.$host,
-      });
-    }
+    if (this.$ref.ref.parent === null) return null;
+    return new NodeFire(this.$ref.ref.parent, {
+      scope: this.$scope,
+      host: this.$host,
+    });
   }
 
   /**
@@ -284,8 +230,8 @@ class NodeFire {
   get(options) {
     return invoke(
       {ref: this, method: 'get', args: []}, options,
-      options => {
-        if (options.cache === undefined || options.cache) this.cache();
+      opts => {
+        if (opts.cache === undefined || opts.cache) this.cache();
         return this.$ref.once('value').then(snap => getNormalValue(snap));
       }
     );
@@ -296,14 +242,14 @@ class NodeFire {
    */
   cache() {
     if (!cache) return;
-    const url = this.toString();
-    if (cache.has(url)) {
+    const uri = this.toString();
+    if (cache.has(uri)) {
       cacheHits++;
     } else {
       cacheMisses++;
-      cache.set(url, this);
+      cache.set(uri, this);
       this.$ref.on('value', noopCallback, () => {
-        if (cache) cache.del(url);
+        if (cache) cache.del(uri);
       });
     }
   }
@@ -314,9 +260,9 @@ class NodeFire {
    */
   uncache() {
     if (!cache) return;
-    const url = this.toString();
-    if (!cache.has(url)) return false;
-    cache.del(url);
+    const uri = this.toString();
+    if (!cache.has(uri)) return false;
+    cache.del(uri);
     return true;
   }
 
@@ -329,7 +275,7 @@ class NodeFire {
   set(value, options) {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
-      options => this.$ref.set(value)
+      opts => this.$ref.set(value)
     );
   }
 
@@ -343,7 +289,7 @@ class NodeFire {
   update(value, options) {
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
-      options => this.$ref.update(value)
+      opts => this.$ref.update(value)
     );
   }
 
@@ -355,7 +301,7 @@ class NodeFire {
   remove(options) {
     return invoke(
       {ref: this, method: 'remove', args: []}, options,
-      options => this.$ref.remove()
+      opts => this.$ref.remove()
     );
   }
 
@@ -372,15 +318,14 @@ class NodeFire {
         scope: this.$scope,
         host: this.$host,
       });
-    } else {
-      return invoke({ref: this, method: 'push', args: [value]}, options, options => {
-        const ref = this.$ref.push(value);
-        return ref.then(() => new NodeFire(ref, {
-          scope: this.$scope,
-          host: this.$host,
-        }));
-      });
     }
+    return invoke({ref: this, method: 'push', args: [value]}, options, opts => {
+      const ref = this.$ref.push(value);
+      return ref.then(() => new NodeFire(ref, {
+        scope: this.$scope,
+        host: this.$host,
+      }));
+    });
   }
 
   /**
@@ -484,10 +429,10 @@ class NodeFire {
               settled = true;
               if (timeoutId) clearTimeout(timeoutId);
               if (onceTxn) self.$ref.off('value', onceTxn);
-              fillMetadata(error ? 'error' : (committed ? 'commit': 'skip'));
+              fillMetadata(error ? 'error' : (committed ? 'commit' : 'skip'));
               if (NodeFire.LOG_TRANSACTIONS) {
                 console.log(JSON.stringify({txn: {
-                  tries: tries, path: self.toString().replace(/https:\/\/[^\/]*/, ''),
+                  tries, path: self.toString().replace(/https:\/\/[^/]*/, ''),
                   outcome: metadata.outcome, value: result
                 }}));
               }
@@ -499,7 +444,7 @@ class NodeFire {
                 resolve();
               }
             }, false).catch(noopCallback);
-          } catch(e) {
+          } catch (e) {
             wrappedReject(e);
           }
         }
@@ -571,7 +516,7 @@ class NodeFire {
   /**
    * Fetches the keys of the current reference's children without also fetching all the contents,
    * using the Firebase REST API.
-   * 
+   *
    * @param {object} options An options object with the following items, all optional:
    *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient errors
    *               (defaults to 1)
@@ -579,10 +524,10 @@ class NodeFire {
    * @return A promise that resolves to an array of key strings.
    */
   childrenKeys() {
-    return this.$ref.childrenKeys
-      ? this.$ref.childrenKeys(...arguments)
-      : firebaseChildrenKeys(this.$ref, ...arguments);
-  };
+    return this.$ref.childrenKeys ?
+      this.$ref.childrenKeys(...arguments) :
+      firebaseChildrenKeys(this.$ref, ...arguments);
+  }
 
   /**
    * Turns Firebase low-level connection logging on or off.
@@ -612,12 +557,12 @@ class NodeFire {
    */
   static setCacheSize(max) {
     if (max) {
-      if (!cache) {
-        cache = new LRUCache({max: max, dispose: (key, ref) => {
+      if (cache) {
+        cache.max = max;
+      } else {
+        cache = new LRUCache({max, dispose(key, ref) {
           ref.$ref.off('value', noopCallback);
         }});
-      } else {
-        cache.max = max;
       }
     } else {
       if (cache) cache.reset();
@@ -668,9 +613,9 @@ class NodeFire {
    * @return {string} The escaped key.
    */
   static escape(key) {
-      return key.toString().replace(/[\\\.\$\#\[\]\/]/g, char => {
-        return '\\' + char.charCodeAt(0).toString(16);
-      });
+    return key.toString().replace(/[\\.$#[\]/]/g, char => {
+      return '\\' + char.charCodeAt(0).toString(16);
+    });
   }
 
   /**
@@ -703,6 +648,52 @@ wrapNodeFire('orderByKey');
 wrapNodeFire('orderByValue');
 
 
+/**
+  A wrapper around a Firebase DataSnapshot.  Works just like a Firebase snapshot, except that
+  ref returns a NodeFire instance, val() normalizes the value, and child() takes an optional
+  refining scope.
+ */
+class Snapshot {
+  constructor(snap, nodeFire) {
+    this.$snap = snap;
+    this.$nodeFire = nodeFire;
+  }
+
+  get key() {
+    return this.$snap.key;
+  }
+
+  get ref() {
+    return new NodeFire(this.$snap.ref, {
+      scope: this.$nodeFire.$scope,
+      host: this.$nodeFire.$host,
+    });
+  }
+
+  val() {
+    return getNormalValue(this.$snap);
+  }
+
+  child(path, scope) {
+    const childNodeFire = this.$nodeFire.scope(scope);
+    return new Snapshot(this.$snap.child(childNodeFire.interpolate(path)), childNodeFire);
+  }
+
+  forEach(callback) {
+    this.$snap.forEach(child => {
+      return callback(new Snapshot(child, this.$nodeFire));
+    });
+  }
+}
+
+/* Snapshot methods that work the same. */
+delegateSnapshot('toJSON');
+delegateSnapshot('exists');
+delegateSnapshot('hasChild');
+delegateSnapshot('hasChildren');
+delegateSnapshot('numChildren');
+
+
 // We need to wrap the user's callback so that we can wrap each snapshot, but must keep track of the
 // wrapper function in case the user calls off().  We don't reuse wrappers so that the number of
 // wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
@@ -712,6 +703,7 @@ function captureCallback(nodeFire, eventType, callback) {
   callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || {};
   callback.$nodeFireCallbacks[key] = callback.$nodeFireCallbacks[key] || [];
   const nodeFireCallback = function(snap, previousChildKey) {
+    // eslint-disable-next-line no-invalid-this
     runGenerator(callback.call(this, new Snapshot(snap, nodeFire), previousChildKey));
   };
   callback.$nodeFireCallbacks[key].push(nodeFireCallback);
@@ -744,6 +736,7 @@ function wrapNodeFire(method) {
   };
 }
 
+
 function delegateSnapshot(method) {
   Snapshot.prototype[method] = function() {
     return this.$snap[method].apply(this.$snap, arguments);
@@ -759,7 +752,7 @@ function wrapReject(nodefire, method, value, reject) {
   if (!reject) return reject;
   return function(error) {
     error.firebase = {
-      method: method, ref: nodefire.toString(), value: hasValue ? value : undefined,
+      method, ref: nodefire.toString(), value: hasValue ? value : undefined,
       code: (error.code || error.message || '').toLowerCase() || undefined
     };
     if (error.message === 'timeout' && error.timeout) {
@@ -775,7 +768,7 @@ function wrapReject(nodefire, method, value, reject) {
   };
 }
 
-function noopCallback() {}
+function noopCallback() {/* empty */}
 
 function trackTimeOffset(host, ref) {
   ref.root.child('.info/serverTimeOffset').on('value', snap => {
@@ -833,11 +826,13 @@ function invoke(op, options = {}, fn) {
   ).then(() => {
     const promises = [];
     let timeoutId, settled;
-    if (options.timeout) promises.push(new Promise((resolve, reject) => {
-      timeoutId = setTimeout(() => {
-        if (!settled) reject(new Error('timeout'));
-      }, options.timeout);
-    }));
+    if (options.timeout) {
+      promises.push(new Promise((resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          if (!settled) reject(new Error('timeout'));
+        }, options.timeout);
+      }));
+    }
     promises.push(Promise.resolve(fn(options)).then(result => {
       settled = true;
       if (timeoutId) clearTimeout(timeoutId);
