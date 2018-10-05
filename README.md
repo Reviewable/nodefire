@@ -9,6 +9,7 @@ following features:
 1. Any paths passed in are treated as templates and interpolated within an implicit or explicit scope, avoiding manual (and error-prone) string concatenation.  Characters forbidden by Firebase are automatically escaped.
 1. Since one-time fetches of a reference are common in server code, a new `get` method makes them easy and an optional LRU cache keeps the most used ones pinned and synced to reduce latency.
 1. Transactions prefetch the current value of the reference to avoid having every transaction re-executed at least twice.
+1. A `childrenKeys()` method allows you to perform a shallow query to fetch a `Reference`'s children keys without fetching all of its data.
 
 If you'd like to be able to use generators as `on` or `once` callbacks, make sure to set `Promise.on` to a `co`-compatible function.
 
