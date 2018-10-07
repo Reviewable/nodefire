@@ -517,17 +517,17 @@ class NodeFire {
    */
   enablePermissionDebugging(legacySecret) {
     if (legacySecret) {
-      if (!simulators[this.$host]) {
+      if (!simulators[this.database.app.name]) {
         const authOverride = this.database.app.options.databaseAuthVariableOverride;
         if (!authOverride || !authOverride.uid) {
           throw new Error(
             'You must initialize your database with a databaseAuthVariableOverride that includes ' +
             'a uid');
         }
-        simulators[this.$host] = new firefight.Simulator(this.database, legacySecret);
+        simulators[this.database.app.name] = new firefight.Simulator(this.database, legacySecret);
       }
     } else {
-      delete simulators[this.$host];
+      delete simulators[this.database.app.name];
     }
   }
 
@@ -739,8 +739,7 @@ function wrapReject(nodefire, method, value, reject) {
   }
   if (!reject) return reject;
   return function(error) {
-    handleError(
-      error, {ref: nodefire, method, args: hasValue ? [value] : []}, () => reject(error));
+    handleError(error, {ref: nodefire, method, args: hasValue ? [value] : []}, reject);
   };
 }
 
@@ -825,7 +824,7 @@ function invoke(op, options = {}, fn) {
       settled = true;
       if (timeoutId) clearTimeout(timeoutId);
       if (e.message === 'timeout') e.timeout = options.timeout;
-      return handleError(e, op, () => Promise.reject(e));
+      return handleError(e, op, Promise.reject);
     });
   });
 }
@@ -848,12 +847,12 @@ function handleError(error, op, callback) {
   if (!error.code) error.code = error.message;
   error.message = 'Firebase: ' + error.message;
   const simulator = simulators[op.ref.$host];
-  if (!simulator || !simulator.isPermissionDenied(error)) return callback();
+  if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
   const method = op.method === 'get' ? 'once' : op.method;
   const authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
   return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
     error.firebase.permissionTrace = explanation;
-    return callback();
+    return callback(error);
   });
 }
 
