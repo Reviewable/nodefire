@@ -743,11 +743,12 @@ function wrapReject(nodefire, method, value, reject) {
       error.firebase.inputValues = error.inputValues;
       delete error.inputValues;
     }
+    if (!error.code) error.code = error.message;
     error.message = 'Firebase: ' + error.message;
     const simulator = simulators[nodefire.$host];
     if (!simulator || !simulator.isPermissionDenied(error)) return reject(error);
     const authOverride = nodefire.database.app.options.databaseAuthVariableOverride;
-    simulator.auth(authOverride)[method](error.firebase.value).then(explanation => {
+    simulator.auth(authOverride)[method](nodefire, error.firebase.value).then(explanation => {
       error.firebase.permissionTrace = explanation;
       reject(error);
     });
@@ -841,13 +842,14 @@ function invoke(op, options = {}, fn) {
         args: _.map(
           op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg)
       };
+      if (!e.code) e.code = e.message;
       e.message = 'Firebase: ' + e.message;
       const simulator = simulators[op.ref.$host];
       if (!simulator || !simulator.isPermissionDenied(e)) return Promise.reject(e);
       const method = op.method === 'get' ? 'once' : op.method;
       const value = op.args[0];
       const authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
-      return simulator.auth(authOverride)[method](value).then(explanation => {
+      return simulator.auth(authOverride)[method](op.ref, value).then(explanation => {
         e.firebase.permissionTrace = explanation;
         return Promise.reject(e);
       });

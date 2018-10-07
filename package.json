@@ -27,6 +27,7 @@
   "dependencies": {
     "firebase-admin": "5.x.x || 6.x.x",
     "firebase-childrenkeys": "^2.0.0",
+    "firefight": "^0.1.0",
     "lodash": "^3.10.1",
     "lru-cache": "^4.0.0",
     "request": "^2.87.0"
