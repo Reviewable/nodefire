@@ -5,9 +5,10 @@ const _ = require('lodash');
 const url = require('url');
 const LRUCache = require('lru-cache');
 const firebaseChildrenKeys = require('firebase-childrenkeys');
+const firefight = require('firefight');
 
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
-const serverTimeOffsets = {}, serverDisconnects = {};
+const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors = [];
 
 
@@ -538,6 +539,30 @@ class NodeFire {
   }
 
   /**
+   * Turns debugging of permission denied errors on and off for the database this ref is attached
+   * to.  When turned on, permission denied errors will have an additional permissionTrace property
+   * with a human-readable description of which security rules failed.  There's no performance
+   * penalty to turning this on until a permission actually gets denied.
+   * @param {string} legacySecret A legacy database secret, needed to access the old API that allows
+   *     simulating request with debug feedback.  Pass a falsy value to turn off debugging.
+   */
+  enablePermissionDebugging(legacySecret) {
+    if (legacySecret) {
+      if (!simulators[this.database.app.name]) {
+        const authOverride = this.database.app.options.databaseAuthVariableOverride;
+        if (!authOverride || !authOverride.uid) {
+          throw new Error(
+            'You must initialize your database with a databaseAuthVariableOverride that includes ' +
+            'a uid');
+        }
+        simulators[this.database.app.name] = new firefight.Simulator(this.database, legacySecret);
+      }
+    } else {
+      delete simulators[this.database.app.name];
+    }
+  }
+
+  /**
    * Adds an intercepting callback before all NodeFire database operations.  This callback can
    * modify the operation's options or block it while performing other work.
    * @param {Function} callback The callback to invoke before each operation.  It will be passed two
@@ -751,20 +776,7 @@ function wrapReject(nodefire, method, value, reject) {
   }
   if (!reject) return reject;
   return function(error) {
-    error.firebase = {
-      method, ref: nodefire.toString(), value: hasValue ? value : undefined,
-      code: (error.code || error.message || '').toLowerCase() || undefined
-    };
-    if (error.message === 'timeout' && error.timeout) {
-      error.firebase.timeout = error.timeout;
-      delete error.timeout;
-    }
-    if (error.message === 'stuck' && error.inputValues) {
-      error.firebase.inputValues = error.inputValues;
-      delete error.inputValues;
-    }
-    error.message = 'Firebase: ' + error.message;
-    reject(error);
+    handleError(error, {ref: nodefire, method, args: hasValue ? [value] : []}, reject);
   };
 }
 
@@ -841,16 +853,36 @@ function invoke(op, options = {}, fn) {
     return Promise.race(promises).catch(e => {
       settled = true;
       if (timeoutId) clearTimeout(timeoutId);
-      e.firebase = {
-        ref: op.ref.toString(), method: op.method,
-        timeout: e.message === 'timeout' ? options.timeout : undefined,
-        code: (e.code || e.message || '').toLowerCase() || undefined,
-        args: _.map(
-          op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg)
-      };
-      e.message = 'Firebase: ' + e.message;
-      return Promise.reject(e);
+      if (e.message === 'timeout') e.timeout = options.timeout;
+      return handleError(e, op, Promise.reject);
     });
+  });
+}
+
+function handleError(error, op, callback) {
+  error.firebase = {
+    ref: op.ref.toString(), method: op.method,
+    code: (error.code || error.message || '').toLowerCase() || undefined,
+    args: _.map(
+      op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg)
+  };
+  if (error.message === 'timeout' && error.timeout) {
+    error.firebase.timeout = error.timeout;
+    delete error.timeout;
+  }
+  if (error.message === 'stuck' && error.inputValues) {
+    error.firebase.inputValues = error.inputValues;
+    delete error.inputValues;
+  }
+  if (!error.code) error.code = error.message;
+  error.message = 'Firebase: ' + error.message;
+  const simulator = simulators[op.ref.$host];
+  if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
+  const method = op.method === 'get' ? 'once' : op.method;
+  const authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
+  return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
+    error.firebase.permissionTrace = explanation;
+    return callback(error);
   });
 }
 

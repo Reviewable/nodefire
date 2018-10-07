@@ -10,6 +10,7 @@ following features:
 1. Since one-time fetches of a reference are common in server code, a new `get` method makes them easy and an optional LRU cache keeps the most used ones pinned and synced to reduce latency.
 1. Transactions prefetch the current value of the reference to avoid having every transaction re-executed at least twice.
 1. A `childrenKeys()` method allows you to perform a shallow query to fetch a `Reference`'s children keys without fetching all of its data.
+1. You have the option of obtaining security rule traces when an operation fails due to permission denied.
 
 If you'd like to be able to use generators as `on` or `once` callbacks, make sure to set `Promise.on` to a `co`-compatible function.
 
@@ -95,6 +96,16 @@ static SERVER_TIMESTAMP
  * @param {boolean} enable Whether to enable or disable logging.
  */
 static enableFirebaseLogging(enable)
+
+/**
+ * Turns debugging of permission denied errors on and off for the database this ref is attached
+ * to.  When turned on, permission denied errors will have an additional permissionTrace property
+ * with a human-readable description of which security rules failed.  There's no performance
+ * penalty to turning this on until a permission actually gets denied.
+ * @param {string} legacySecret A legacy database secret, needed to access the old API that allows
+ *     simulating request with debug feedback.  Pass a falsy value to turn off debugging.
+ */
+enablePermissionDebugging(legacySecret)
 
 /**
  * Adds an intercepting callback before all NodeFire database operations.  This callback can
