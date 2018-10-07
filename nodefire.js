@@ -307,7 +307,7 @@ class NodeFire {
 
   /**
    * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
-   * want to generate a new unique key you can call generateUniqueKey() directly.
+   * want to generate a new unique key you can call newKey() directly.
    * @param  {Object || number || string || boolean} value The value to push.
    * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
@@ -354,7 +354,7 @@ class NodeFire {
   transaction(updateFunction, options) {
     const self = this;  // easier than using => functions or binding explicitly
     let tries = 0, result;
-    const startTime = self.now();
+    const startTime = self.now;
     let prefetchDoneTime;
     const metadata = {};
     options = options || {};
@@ -365,9 +365,9 @@ class NodeFire {
       metadata.tries = tries;
       if (prefetchDoneTime) {
         metadata.prefetchDuration = prefetchDoneTime - startTime;
-        metadata.duration = self.now() - prefetchDoneTime;
+        metadata.duration = self.now - prefetchDoneTime;
       } else {
-        metadata.duration = self.now() - startTime;
+        metadata.duration = self.now - startTime;
       }
     }
 
@@ -419,7 +419,7 @@ class NodeFire {
 
         let onceTxn, timeoutId;
         function txn() {
-          if (!prefetchDoneTime) prefetchDoneTime = self.now();
+          if (!prefetchDoneTime) prefetchDoneTime = self.now;
           try {
             self.$ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
               if (error && (error.message === 'set' || error.message === 'disconnect')) {
@@ -501,7 +501,7 @@ class NodeFire {
    * Generates a unique string that can be used as a key in Firebase.
    * @return {string} A unique string that satisfies Firebase's key syntax constraints.
    */
-  generateUniqueKey() {
+  newKey() {
     return this.$ref.push().key;
   }
 
@@ -509,7 +509,7 @@ class NodeFire {
    * Returns the current timestamp after adjusting for the Firebase-computed server time offset.
    * @return {number} The current time in integer milliseconds since the epoch.
    */
-  now() {
+  get now() {
     return new Date().getTime() + serverTimeOffsets[this.$host];
   }
 

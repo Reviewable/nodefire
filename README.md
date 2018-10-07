@@ -41,7 +41,7 @@ co(
       theFoo: stuff.child('foos/:foo').get(),
       theUser: stuff.root.child('users/{baz.qux}').get(),
     };
-    
+
     yield [
       stuff.child('counters/:foo').transaction((value) => value + 1),
       stuff.child('bars/:foo/{theUser.username}', data).set(data.theFoo.bar),
@@ -251,7 +251,7 @@ remove()
 
 /**
  * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
- * want to generate a new unique key you can call generateUniqueKey() directly.
+ * want to generate a new unique key you can call newKey() directly.
  * @param  {Object || number || string || boolean} value The value to push.
  * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
  *     pushed value (with the same scope as this object), or rejected with an error.
@@ -286,7 +286,7 @@ transaction(updateFunction, options)
 /**
  * Fetches the keys of the current reference's children without also fetching all the contents,
  * using the Firebase REST API.
- * 
+ *
  * @param options An options object with the following items, all optional:
  *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient errors
  *               (defaults to 1)
@@ -299,13 +299,12 @@ childrenKeys(options)
  * Generates a unique string that can be used as a key in Firebase.
  * @return {string} A unique string that satisfies Firebase's key syntax constraints.
  */
-generateUniqueKey()
+newKey()
 
 /**
- * Returns the current timestamp after adjusting for the Firebase-computed server time offset.
- * @return {number} The current time in integer milliseconds since the epoch.
+ * The current timestamp after adjusting for the Firebase-computed server time offset.
  */
-now()
+now
 
 /**
  * Returns whether or not this NodeFire instance is equivalent to the provided NodeFire instance.
