@@ -2,11 +2,10 @@
 
 const admin = require('firebase-admin');
 const _ = require('lodash');
-const url = require('url');
 const LRUCache = require('lru-cache');
 const firebaseChildrenKeys = require('firebase-childrenkeys');
 
-let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedHost = Infinity;
+let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {};
 const operationInterceptors = [];
 
@@ -29,11 +28,9 @@ class NodeFire {
    * Creates a new NodeFire wrapper around a raw Firebase Admin reference.
    *
    * @param {admin.database.Query} ref A fully authenticated Firebase Admin reference or query.
-   * @param {Object} options Optional dictionary containing options.
-   * @param {Object} options.scope Optional dictionary that will be used for interpolating paths.
-   * @param {string} options.host For internal use only, do not pass.
+   * @param {Object} scope Optional dictionary that will be used for interpolating paths.
    */
-  constructor(ref, options = {}) {
+  constructor(ref, scope) {
     const refIsNonNullObject = typeof ref === 'object' && ref !== null;
     if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
         typeof ref.ref.transaction !== 'function') {
@@ -41,25 +38,14 @@ class NodeFire {
         `Expected first argument passed to NodeFire constructor to be a Firebase Database reference,
         but got "${ref}".`
       );
-    } else if (typeof options !== 'object' || options === null) {
-      throw new Error(
-        `Expected second argument passed to NodeFire constructor to be an object, ` +
-        `but got "${options}".`
-      );
     }
 
     this.$ref = ref;
+    this.$scope = scope || {};
+    this._path = undefined;  // initialized lazily
 
-    this.$scope = options.scope || {};
-    this.$host = options.host || url.parse(this.$ref.toString()).host;
-
-    if (!(this.$host in serverTimeOffsets)) {
-      serverTimeOffsets[this.$host] = 0;
-      trackTimeOffset(this.$host, this);
-    }
-    if (!(this.$host in serverDisconnects)) {
-      trackDisconnect(this.$host, this);
-    }
+    trackTimeOffset(this);
+    trackDisconnect(this);
   }
 
   /**
@@ -94,7 +80,11 @@ class NodeFire {
    * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
    */
   get path() {
-    return decodeURIComponent(this.$ref.toString()).slice(this.$ref.ref.root.toString().length - 1);
+    if (!this._path) {
+      this._path =
+        decodeURIComponent(this.$ref.toString()).slice(this.$ref.ref.root.toString().length - 1);
+    }
+    return this._path;
   }
 
   /**
@@ -103,10 +93,7 @@ class NodeFire {
    */
   get ref() {
     if (this.$ref.isEqual(this.$ref.ref)) return this;
-    return new NodeFire(this.$ref.ref, {
-      scope: this.$scope,
-      host: this.$host,
-    });
+    return new NodeFire(this.$ref.ref, this.$scope);
   }
 
   /**
@@ -115,10 +102,7 @@ class NodeFire {
    */
   get root() {
     if (this.$ref.isEqual(this.$ref.ref.root)) return this;
-    return new NodeFire(this.$ref.ref.root, {
-      scope: this.$scope,
-      host: this.$host,
-    });
+    return new NodeFire(this.$ref.ref.root, this.$scope);
   }
 
   /**
@@ -128,10 +112,7 @@ class NodeFire {
    */
   get parent() {
     if (this.$ref.ref.parent === null) return null;
-    return new NodeFire(this.$ref.ref.parent, {
-      scope: this.$scope,
-      host: this.$host,
-    });
+    return new NodeFire(this.$ref.ref.parent, this.$scope);
   }
 
   /**
@@ -198,10 +179,7 @@ class NodeFire {
    * @return {NodeFire} A new NodeFire object with the same reference and new scope.
    */
   scope(scope) {
-    return new NodeFire(this.$ref, {
-      scope: _.extend(_.clone(this.$scope), scope),
-      host: this.$host,
-    });
+    return new NodeFire(this.$ref, _.extend(_.clone(this.$scope), scope));
   }
 
   /**
@@ -215,10 +193,7 @@ class NodeFire {
    */
   child(path, scope) {
     const child = this.scope(scope);
-    return new NodeFire(this.$ref.child(child.interpolate(path)), {
-      scope: child.$scope,
-      host: this.$host,
-    });
+    return new NodeFire(this.$ref.child(child.interpolate(path)), child.$scope);
   }
 
   /**
@@ -242,14 +217,14 @@ class NodeFire {
    */
   cache() {
     if (!cache) return;
-    const uri = this.toString();
-    if (cache.has(uri)) {
+    const key = this.database.app.name + '/' + this.path;
+    if (cache.has(key)) {
       cacheHits++;
     } else {
       cacheMisses++;
-      cache.set(uri, this);
+      cache.set(key, this);
       this.$ref.on('value', noopCallback, () => {
-        if (cache) cache.del(uri);
+        if (cache) cache.del(key);
       });
     }
   }
@@ -260,9 +235,9 @@ class NodeFire {
    */
   uncache() {
     if (!cache) return;
-    const uri = this.toString();
-    if (!cache.has(uri)) return false;
-    cache.del(uri);
+    const key = this.database.app.name + '/' + this.path;
+    if (!cache.has(key)) return false;
+    cache.del(key);
     return true;
   }
 
@@ -314,17 +289,11 @@ class NodeFire {
    */
   push(value, options) {
     if (value === undefined || value === null) {
-      return new NodeFire(this.$ref.push(), {
-        scope: this.$scope,
-        host: this.$host,
-      });
+      return new NodeFire(this.$ref.push(), this.$scope);
     }
     return invoke({ref: this, method: 'push', args: [value]}, options, opts => {
       const ref = this.$ref.push(value);
-      return ref.then(() => new NodeFire(ref, {
-        scope: this.$scope,
-        host: this.$host,
-      }));
+      return ref.then(() => new NodeFire(ref, this.$scope));
     });
   }
 
@@ -510,7 +479,7 @@ class NodeFire {
    * @return {number} The current time in integer milliseconds since the epoch.
    */
   get now() {
-    return new Date().getTime() + serverTimeOffsets[this.$host];
+    return new Date().getTime() + serverTimeOffsets[this.database.app.name];
   }
 
   /**
@@ -571,15 +540,15 @@ class NodeFire {
   }
 
   /**
-   * Sets the maximum number of pinned values to retain in the cache when a host gets disconnected.
+   * Sets the maximum number of pinned values to retain in the cache when an app gets disconnected.
    * By default all values are retained, but if your cache size is high they'll all need to be
    * double-checked against the Firebase server when the connection comes back.  It may thus be more
    * economical to drop the least used ones when disconnected.
-   * @param {number} max The maximum number of values from a disconnected host to keep pinned in the
+   * @param {number} max The maximum number of values from a disconnected app to keep pinned in the
    *        cache.
    */
-  static setCacheSizeForDisconnectedHost(max) {
-    maxCacheSizeForDisconnectedHost = max;
+  static setCacheSizeForDisconnectedApp(max) {
+    maxCacheSizeForDisconnectedApp = max;
   }
 
   /**
@@ -664,10 +633,7 @@ class Snapshot {
   }
 
   get ref() {
-    return new NodeFire(this.$snap.ref, {
-      scope: this.$nodeFire.$scope,
-      host: this.$nodeFire.$host,
-    });
+    return new NodeFire(this.$snap.ref, this.$nodeFire.$scope);
   }
 
   val() {
@@ -729,10 +695,7 @@ function runGenerator(o) {
 function wrapNodeFire(method) {
   NodeFire.prototype[method] = function() {
     return new NodeFire(
-      this.$ref[method].apply(this.$ref, arguments), {
-        scope: this.$scope,
-        host: this.$host,
-      });
+      this.$ref[method].apply(this.$ref, arguments), this.$scope);
   };
 }
 
@@ -770,28 +733,35 @@ function wrapReject(nodefire, method, value, reject) {
 
 function noopCallback() {/* empty */}
 
-function trackTimeOffset(host, ref) {
+function trackTimeOffset(ref, recover) {
+  const appName = ref.database.app.name;
+  if (!recover) {
+    if (appName in serverTimeOffsets) return;
+    serverTimeOffsets[appName] = 0;
+  }
   ref.root.child('.info/serverTimeOffset').on('value', snap => {
-    serverTimeOffsets[host] = snap.val();
-  }, _.bind(trackTimeOffset, host, ref));
+    serverTimeOffsets[appName] = snap.val();
+  }, _.bind(trackTimeOffset, ref, true));
 }
 
-function trackDisconnect(host, ref) {
-  serverDisconnects[host] = true;
+function trackDisconnect(ref, recover) {
+  const appName = ref.database.app.name;
+  if (!recover && serverDisconnects[appName]) return;
+  serverDisconnects[appName] = true;
   ref.root.child('.info/connected').on(
     'value', snap => {
-      if (!snap.val()) trimCache(host);
-    }, _.bind(trackDisconnect, host, ref)
+      if (!snap.val()) trimCache(ref);
+    }, _.bind(trackDisconnect, ref, true)
   );
 }
 
-function trimCache(host) {
-  if (!cache || cache.max <= maxCacheSizeForDisconnectedHost) return;
-  const prefix = 'https://' + host + '/';
+function trimCache(ref) {
+  if (!cache || cache.max <= maxCacheSizeForDisconnectedApp) return;
+  const prefix = ref.database.app.name + '/';
   let count = 0;
   cache.forEach((value, key) => {
     if (key.slice(0, prefix.length) !== prefix) return;
-    if (++count <= maxCacheSizeForDisconnectedHost) return;
+    if (++count <= maxCacheSizeForDisconnectedApp) return;
     cache.del(key);
   });
 }
