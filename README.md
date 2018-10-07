@@ -71,11 +71,9 @@ class NodeFire;
  * Creates a new NodeFire wrapper around a raw Firebase Admin reference.
  *
  * @param {admin.database.Query} refOrUrl A fully authenticated Firebase Admin reference or query.
- * @param {Object} options Optional dictionary containing options.
-  * @param {Object} options.scope Optional dictionary that will be used for interpolating paths.
-  * @param {string} options.host For internal use only, do not pass.
+ * @param {Object} scope Optional dictionary that will be used for interpolating paths.
  */
-constructor(ref, options)
+constructor(ref, scope)
 
 /**
  * Flag that indicates whether to log transactions and the number of tries needed.
@@ -115,14 +113,14 @@ static interceptOperations(callback)
 static setCacheSize(max)
 
 /**
- * Sets the maximum number of pinned values to retain in the cache when a host gets disconnected.
+ * Sets the maximum number of pinned values to retain in the cache when an app gets disconnected.
  * By default all values are retained, but if your cache size is high they'll all need to be double-
  * checked against the Firebase server when the connection comes back.  It may thus be more
  * economical to drop the least used ones when disconnected.
- * @param {number} max The maximum number of values from a disconnected host to keep pinned in the
+ * @param {number} max The maximum number of values from a disconnected app to keep pinned in the
  *        cache.
  */
-static setCacheSizeForDisconnectedHost(max)
+static setCacheSizeForDisconnectedApp(max)
 
 /**
  * Gets the current number of values pinned in the cache.
