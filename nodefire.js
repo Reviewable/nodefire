@@ -517,7 +517,15 @@ class NodeFire {
    */
   enablePermissionDebugging(legacySecret) {
     if (legacySecret) {
-      simulators[this.$host] = new firefight.Simulator(this.database, legacySecret);
+      if (!simulators[this.$host]) {
+        const authOverride = this.database.app.options.databaseAuthVariableOverride;
+        if (!authOverride || !authOverride.uid) {
+          throw new Error(
+            'You must initialize your database with a databaseAuthVariableOverride that includes ' +
+            'a uid');
+        }
+        simulators[this.$host] = new firefight.Simulator(this.database, legacySecret);
+      }
     } else {
       delete simulators[this.$host];
     }
@@ -731,27 +739,8 @@ function wrapReject(nodefire, method, value, reject) {
   }
   if (!reject) return reject;
   return function(error) {
-    error.firebase = {
-      method, ref: nodefire.toString(), value: hasValue ? value : undefined,
-      code: (error.code || error.message || '').toLowerCase() || undefined
-    };
-    if (error.message === 'timeout' && error.timeout) {
-      error.firebase.timeout = error.timeout;
-      delete error.timeout;
-    }
-    if (error.message === 'stuck' && error.inputValues) {
-      error.firebase.inputValues = error.inputValues;
-      delete error.inputValues;
-    }
-    if (!error.code) error.code = error.message;
-    error.message = 'Firebase: ' + error.message;
-    const simulator = simulators[nodefire.$host];
-    if (!simulator || !simulator.isPermissionDenied(error)) return reject(error);
-    const authOverride = nodefire.database.app.options.databaseAuthVariableOverride;
-    simulator.auth(authOverride)[method](nodefire, error.firebase.value).then(explanation => {
-      error.firebase.permissionTrace = explanation;
-      reject(error);
-    });
+    handleError(
+      error, {ref: nodefire, method, args: hasValue ? [value] : []}, () => reject(error));
   };
 }
 
@@ -835,25 +824,36 @@ function invoke(op, options = {}, fn) {
     return Promise.race(promises).catch(e => {
       settled = true;
       if (timeoutId) clearTimeout(timeoutId);
-      e.firebase = {
-        ref: op.ref.toString(), method: op.method,
-        timeout: e.message === 'timeout' ? options.timeout : undefined,
-        code: (e.code || e.message || '').toLowerCase() || undefined,
-        args: _.map(
-          op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg)
-      };
-      if (!e.code) e.code = e.message;
-      e.message = 'Firebase: ' + e.message;
-      const simulator = simulators[op.ref.$host];
-      if (!simulator || !simulator.isPermissionDenied(e)) return Promise.reject(e);
-      const method = op.method === 'get' ? 'once' : op.method;
-      const value = op.args[0];
-      const authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
-      return simulator.auth(authOverride)[method](op.ref, value).then(explanation => {
-        e.firebase.permissionTrace = explanation;
-        return Promise.reject(e);
-      });
+      if (e.message === 'timeout') e.timeout = options.timeout;
+      return handleError(e, op, () => Promise.reject(e));
     });
+  });
+}
+
+function handleError(error, op, callback) {
+  error.firebase = {
+    ref: op.ref.toString(), method: op.method,
+    code: (error.code || error.message || '').toLowerCase() || undefined,
+    args: _.map(
+      op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg)
+  };
+  if (error.message === 'timeout' && error.timeout) {
+    error.firebase.timeout = error.timeout;
+    delete error.timeout;
+  }
+  if (error.message === 'stuck' && error.inputValues) {
+    error.firebase.inputValues = error.inputValues;
+    delete error.inputValues;
+  }
+  if (!error.code) error.code = error.message;
+  error.message = 'Firebase: ' + error.message;
+  const simulator = simulators[op.ref.$host];
+  if (!simulator || !simulator.isPermissionDenied(error)) return callback();
+  const method = op.method === 'get' ? 'once' : op.method;
+  const authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
+  return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
+    error.firebase.permissionTrace = explanation;
+    return callback();
   });
 }
 
