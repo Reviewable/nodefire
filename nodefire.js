@@ -760,11 +760,9 @@ function trackDisconnect(ref, recover) {
   const appName = ref.database.app.name;
   if (!recover && serverDisconnects[appName]) return;
   serverDisconnects[appName] = true;
-  ref.root.child('.info/connected').on(
-    'value', snap => {
-      if (!snap.val()) trimCache(ref);
-    }, _.bind(trackDisconnect, ref, true)
-  );
+  ref.root.child('.info/connected').on('value', snap => {
+    if (!snap.val()) trimCache(ref);
+  }, _.bind(trackDisconnect, ref, true));
 }
 
 function trimCache(ref) {
