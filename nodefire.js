@@ -844,7 +844,7 @@ function handleError(error, op, callback) {
   }
   if (!error.code) error.code = error.message;
   error.message = 'Firebase: ' + error.message;
-  const simulator = simulators[op.ref.$host];
+  const simulator = simulators[op.ref.database.app.name];
   if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
   const method = op.method === 'get' ? 'once' : op.method;
   const authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
