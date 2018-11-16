@@ -880,7 +880,7 @@ function invoke(op, options = {}, fn) {
       settled = true;
       if (timeoutId) clearTimeout(timeoutId);
       if (e.message === 'timeout') e.timeout = options.timeout;
-      return handleError(e, op, Promise.reject);
+      return handleError(e, op, Promise.reject.bind(Promise));
     });
   });
 }
