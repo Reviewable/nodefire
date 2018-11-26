@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "index.js",
   "engines": {
