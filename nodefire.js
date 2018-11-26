@@ -7,7 +7,6 @@ const firebaseChildrenKeys = require('firebase-childrenkeys');
 const firefight = require('firefight');
 
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
-const localBranches = {};
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors = [];
 
@@ -87,13 +86,6 @@ class NodeFire {
         decodeURIComponent(this.$ref.toString()).slice(this.$ref.ref.root.toString().length - 1);
     }
     return this._path;
-  }
-
-  get _qualifiedPath() {
-    if (!this.__qualifiedPath) {
-      this.__qualifiedPath = this.database.app.name + this.path;
-    }
-    return this.__qualifiedPath;
   }
 
   /**
@@ -215,50 +207,10 @@ class NodeFire {
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       opts => {
-        let immediate = true;
-        const expectImmediate = this._isLocal();
         if (opts.cache === undefined || opts.cache) this.cache();
-        const value = new Promise((resolve, reject) => {
-          const fetch = () => {
-            this.$ref.once('value', snap => {
-              if (immediate && !expectImmediate) {
-                // There seems to be a bug in Firebase where if you run a transaction on a subpath,
-                // sometimes (very rarely) a parent path will be flagged as locally cached even
-                // though it only has partial data from the transaction.  We try to work around the
-                // issue by checking whether the once() completes immediately, without waiting for
-                // data from the server, even though we don't think the data is cached.  We'll hit
-                // this condition at most once, since immediate is reset to false as soon as the
-                // promise is initialized.
-                if (NodeFire.LOG_BAD_DATA_WORKAROUND) {
-                  console.log('Working around bad data fetch:', this.path);
-                }
-                // Try again in 1 second, hopefully it'll be better, or perhaps it was a false
-                // positive since we may have missed something that pinned the ref in Firebase.
-                setTimeout(fetch, 1000);
-              } else {
-                resolve(getNormalValue(snap));
-              }
-            }, reject);
-          };
-          fetch();
-        });
-        immediate = false;
-        return value;
+        return this.$ref.once('value').then(snap => getNormalValue(snap));
       }
     );
-  }
-
-  _isLocal() {
-    if (!cache) return false;
-    if (this.path[1] === '.') return true;
-    const pathSegments = this.path.split('/');
-    pathSegments[0] = this.database.app.name;
-    for (let i = pathSegments.length; i >= 2; i--) {
-      const key = pathSegments.slice(0, i).join('/');
-      if (cache.has(key) || key in localBranches) return true;
-    }
-    const key = this.database.app.name + '/';
-    return cache.has(key) || key in localBranches;
   }
 
   /**
@@ -266,13 +218,14 @@ class NodeFire {
    */
   cache() {
     if (!cache) return;
-    if (cache.has(this._qualifiedPath)) {
+    const key = this.database.app.name + '/' + this.path;
+    if (cache.has(key)) {
       cacheHits++;
     } else {
       cacheMisses++;
-      cache.set(this._qualifiedPath, this);
+      cache.set(key, this);
       this.$ref.on('value', noopCallback, () => {
-        if (cache) cache.del(this._qualifiedPath);
+        if (cache) cache.del(key);
       });
     }
   }
@@ -283,8 +236,9 @@ class NodeFire {
    */
   uncache() {
     if (!cache) return;
-    if (!cache.has(this._qualifiedPath)) return false;
-    cache.del(this._qualifiedPath);
+    const key = this.database.app.name + '/' + this.path;
+    if (!cache.has(key)) return false;
+    cache.del(key);
     return true;
   }
 
@@ -444,10 +398,7 @@ class NodeFire {
               }
               settled = true;
               if (timeoutId) clearTimeout(timeoutId);
-              if (onceTxn) {
-                self.$ref.off('value', onceTxn);
-                releaseLocalBranch(self);
-              }
+              if (onceTxn) self.$ref.off('value', onceTxn);
               fillMetadata(error ? 'error' : (committed ? 'commit' : 'skip'));
               if (NodeFire.LOG_TRANSACTIONS) {
                 console.log(JSON.stringify({txn: {
@@ -483,7 +434,7 @@ class NodeFire {
           // ref.
           self.cache();
           onceTxn = _.once(txn);
-          self.$ref.on('value', onceTxn, acquireLocalBranch(this, wrappedRejectNoResult));
+          self.$ref.on('value', onceTxn, wrappedRejectNoResult);
         } else {
           txn();
         }
@@ -503,8 +454,7 @@ class NodeFire {
    *   3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
    */
   on(eventType, callback, cancelCallback, context) {
-    // TODO: check for bad data fetch here too (just like in get()).
-    cancelCallback = acquireLocalBranch(this, wrapReject(this, 'on', cancelCallback));
+    cancelCallback = wrapReject(this, 'on', cancelCallback);
     this.$ref.on(
       eventType, captureCallback(this, eventType, callback), cancelCallback, context);
     return callback;
@@ -515,7 +465,6 @@ class NodeFire {
    */
   off(eventType, callback, context) {
     this.$ref.off(eventType, callback && popCallback(this, eventType, callback), context);
-    releaseLocalBranch(this);
   }
 
   /**
@@ -681,13 +630,6 @@ class NodeFire {
  * @type {boolean} True to log metadata about every transaction.
  */
 NodeFire.LOG_TRANSACTIONS = false;
-
-/**
- * Flag that indicates whether to log when we encounter a potential Firebase bug in get() and
- * attempt to work around it.
- * @type {boolean} True to log a warning when we detect a buggy condition.
- */
-NodeFire.LOG_BAD_DATA_WORKAROUND = false;
 
 /* Query methods, same as on Firebase objects. */
 wrapNodeFire('limitToFirst');
@@ -910,22 +852,6 @@ function handleError(error, op, callback) {
     error.firebase.permissionTrace = explanation;
     return callback(error);
   });
-}
-
-function acquireLocalBranch(nodefire, cancelCallback) {
-  const key = nodefire._qualifiedPath;
-  localBranches[key] = (localBranches[key] || 0) + 1;
-  return function() {
-    releaseLocalBranch(nodefire);
-    // eslint-disable-next-line no-invalid-this
-    if (cancelCallback) cancelCallback.apply(this, arguments);
-  };
-}
-
-function releaseLocalBranch(nodefire) {
-  const key = nodefire._qualifiedPath;
-  if (!localBranches[key]) return;
-  if (!--localBranches[key]) delete localBranches[key];
 }
 
 module.exports = NodeFire;
