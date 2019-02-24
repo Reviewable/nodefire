@@ -5,6 +5,7 @@ const _ = require('lodash');
 const LRUCache = require('lru-cache');
 const firebaseChildrenKeys = require('firebase-childrenkeys');
 const firefight = require('firefight');
+const timers = require('safe-timers');
 
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
@@ -387,7 +388,7 @@ class NodeFire {
           }
         }
 
-        let onceTxn, timeoutId;
+        let onceTxn, timeout;
         function txn() {
           if (!prefetchDoneTime) prefetchDoneTime = self.now;
           try {
@@ -397,7 +398,7 @@ class NodeFire {
                 return;
               }
               settled = true;
-              if (timeoutId) clearTimeout(timeoutId);
+              if (timeout) timeout.clear();
               if (onceTxn) self.$ref.off('value', onceTxn);
               fillMetadata(error ? 'error' : (committed ? 'commit' : 'skip'));
               if (NodeFire.LOG_TRANSACTIONS) {
@@ -419,7 +420,7 @@ class NodeFire {
           }
         }
         if (options.timeout) {
-          timeoutId = setTimeout(() => {
+          timeout = timers.setTimeout(() => {
             if (settled) return;
             aborted = true;
             const e = new Error('timeout');
@@ -805,22 +806,22 @@ function invoke(op, options = {}, fn) {
     )
   ).then(() => {
     const promises = [];
-    let timeoutId, settled;
+    let timeout, settled;
     if (options.timeout) {
       promises.push(new Promise((resolve, reject) => {
-        timeoutId = setTimeout(() => {
+        timeout = timers.setTimeout(() => {
           if (!settled) reject(new Error('timeout'));
         }, options.timeout);
       }));
     }
     promises.push(Promise.resolve(fn(options)).then(result => {
       settled = true;
-      if (timeoutId) clearTimeout(timeoutId);
+      if (timeout) timeout.clear();
       return result;
     }));
     return Promise.race(promises).catch(e => {
       settled = true;
-      if (timeoutId) clearTimeout(timeoutId);
+      if (timeout) timeout.clear();
       if (e.message === 'timeout') e.timeout = options.timeout;
       return handleError(e, op, Promise.reject.bind(Promise));
     });
