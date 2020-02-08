@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "index.js",
   "engines": {
@@ -25,7 +25,7 @@
   },
   "homepage": "https://github.com/pkaminski/nodefire",
   "dependencies": {
-    "firebase-admin": "5.x || 6.x || 7.x",
+    "firebase-admin": "5.x || 6.x || 7.x || 8.x",
     "firebase-childrenkeys": "^2.0.0",
     "firefight": "1.x",
     "lodash": "^3.10.1",
