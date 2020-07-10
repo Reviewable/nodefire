@@ -28,7 +28,7 @@
     "firebase-admin": "5.x || 6.x || 7.x || 8.x",
     "firebase-childrenkeys": "^2.0.0",
     "firefight": "1.x",
-    "lodash": "^3.10.1",
+    "lodash": "^4.17.16",
     "lru-cache": "^4.0.0",
     "request": "^2.87.0",
     "safe-timers": "^1.1.0"
