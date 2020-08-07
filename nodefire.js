@@ -130,14 +130,14 @@ class NodeFire {
    * @return {string} The interpolated string
    */
   interpolate(string, scope) {
-    scope = scope ? _.extend(_.clone(this.$scope), scope) : this.$scope;
+    scope = scope ? _.assign(_.clone(this.$scope), scope) : this.$scope;
     string = string.replace(/:([a-z-_]+)|\{(.+?)\}/gi, (match, v1, v2) => {
       const v = (v1 || v2);
       const parts = v.split('.');
       let value = scope;
       for (let i = 0; i < parts.length; i++) {
         value = value[parts[i]];
-        if (_.isUndefined(value) || value === null) {
+        if (_.isNil(value)) {
           throw new Error(
             'Missing or null variable "' + v + '" when expanding NodeFire path "' + string + '"');
         }
@@ -181,7 +181,7 @@ class NodeFire {
    * @return {NodeFire} A new NodeFire object with the same reference and new scope.
    */
   scope(scope) {
-    return new NodeFire(this.$ref, _.extend(_.clone(this.$scope), scope));
+    return new NodeFire(this.$ref, _.assign(_.clone(this.$scope), scope));
   }
 
   /**
@@ -785,7 +785,7 @@ function getNormalRawValue(value) {
   if (_.isArray(value)) {
     const normalValue = {};
     _.forEach(value, (item, key) => {
-      if (!(item === null || _.isUndefined(item))) {
+      if (!_.isNil(item)) {
         normalValue[key] = getNormalRawValue(item);
       }
     });
