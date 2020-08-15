@@ -12,7 +12,7 @@ following features:
 1. A `childrenKeys()` method allows you to perform a shallow query to fetch a `Reference`'s children keys without fetching all of its data.
 1. You have the option of obtaining security rule traces when an operation fails due to permission denied.
 
-If you'd like to be able to use generators as `on` or `once` callbacks, make sure to set `Promise.on` to a `co`-compatible function.
+If you'd like to be able to use generators as `on` or `once` callbacks, make sure to set `Promise.co` to a `co`-compatible function.
 
 ## Example
 
