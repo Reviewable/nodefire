@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "index.js",
   "engines": {
@@ -26,12 +26,11 @@
   "homepage": "https://github.com/pkaminski/nodefire",
   "dependencies": {
     "firebase-admin": "5.x || 6.x || 7.x || 8.x || 9.x",
-    "firebase-childrenkeys": "^2.0.0",
+    "firebase-childrenkeys": "2.x",
     "firefight": "1.x",
     "lodash": "4.x",
-    "lru-cache": "^4.0.0",
-    "request": "^2.87.0",
-    "safe-timers": "^1.1.0"
+    "lru-cache": "6.x",
+    "safe-timers": "1.x"
   },
   "devDependencies": {
     "eslint": "7.x"
