@@ -608,8 +608,9 @@ class NodeFire {
    * @return {string} The escaped key.
    */
   static escape(key) {
-    return key.toString().replace(/[\\.$#[\]/]/g, char => {
-      return '\\' + char.charCodeAt(0).toString(16);
+    // eslint-disable-next-line no-control-regex
+    return key.toString().replace(/[\x00-\x1f\\.$#[\]\x7f/]/g, char => {
+      return '\\' + _.padStart(char.charCodeAt(0).toString(16), 2, '0');
     });
   }
 
