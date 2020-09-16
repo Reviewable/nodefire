@@ -44,6 +44,9 @@ class NodeFire {
 
     this.$ref = ref;
     this.$scope = scope || {};
+    /**
+     * @private
+     */
     this._path = undefined;  // initialized lazily
 
     trackTimeOffset(this);
@@ -160,7 +163,8 @@ class NodeFire {
 
   /**
    * Returns whether or not this NodeFire instance is equivalent to the provided NodeFire instance.
-   * @return {NodeFire} Another NodeFire instance against which to compare.
+   * @param {Nodefire} otherRef Another NodeFire instance against which to compare.
+   * @return {boolean}
    */
   isEqual(otherRef) {
     return this.$ref.isEqual(otherRef.$ref);
@@ -201,6 +205,7 @@ class NodeFire {
   /**
    * Gets this reference's current value from Firebase, and inserts it into the cache if a
    * maxCacheSize was set and the `cache` option is not false.
+   * @param {{timeout?: number?, cache?: boolean?}} options
    * @return {Promise} A promise that is resolved to the reference's value, or rejected with an
    *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
@@ -246,8 +251,9 @@ class NodeFire {
   /**
    * Sets the value at this reference.
    * @param {Object || number || string || boolean} value The value to set.
-   * @returns {Promise} A promise that is resolved when the value has been set, or rejected with an
-   *     error.
+   * @param {{timeout?: number?}=} options
+   * @returns {Promise<void>} A promise that is resolved when the value has been set,
+   * or rejected with an error.
    */
   set(value, options) {
     return invoke(
@@ -260,8 +266,9 @@ class NodeFire {
    * Updates a value at this reference, setting only the top-level keys supplied and leaving any
    * other ones as-is.
    * @param  {Object} value The value to update the reference with.
-   * @return {Promise} A promise that is resolved when the value has been updated, or rejected with
-   *     an error.
+   * @param {{timeout?: number?}=} options
+   * @return {Promise<void>} A promise that is resolved when the value has been updated,
+   * or rejected with an error.
    */
   update(value, options) {
     return invoke(
@@ -312,7 +319,8 @@ class NodeFire {
    *     reference and returns the new value to replace it with.  Return undefined to abort the
    *     transaction, and null to remove the reference.  Be prepared for this function to be called
    *     multiple times in case of contention.
-   * @param  {Object} options An options objects that may include the following properties:
+   * @param  {{detectStuck?: boolean?, prefetchValue?: boolean?, timeout?: number?}} options An
+   * options objects that may include the following properties:
    *     {number} detectStuck Throw a 'stuck' exception after the update function's input value has
    *         remained unchanged this many times.  Defaults to 0 (turned off).
    *     {boolean} prefetchValue Fetch and keep pinned the value referenced by the transaction while
@@ -453,6 +461,9 @@ class NodeFire {
    *   2) The ref() method will return a NodeFire reference, with the same scope as the reference
    *      on which on() was called.
    *   3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
+   * @param {(Snapshot) => Snapshot} callback
+   * @param {() => void} cancelCallback
+   * @param {any} context
    */
   on(eventType, callback, cancelCallback, context) {
     cancelCallback = wrapReject(this, 'on', cancelCallback);
@@ -488,13 +499,15 @@ class NodeFire {
    * Fetches the keys of the current reference's children without also fetching all the contents,
    * using the Firebase REST API.
    *
-   * @param {object} options An options object with the following items, all optional:
+   * @param {{maxTries?: number?, retryInterval?: number?, agent?: http.Agent?}=} options An options
+   * object with the following items, all optional:
    *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient errors
    *               (defaults to 1)
    *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
-   * @return A promise that resolves to an array of key strings.
+   *   - agent:
+   * @return {Promise<string[]>} A promise that resolves to an array of key strings.
    */
-  childrenKeys() {
+  childrenKeys(options) {
     return this.$ref.childrenKeys ?
       this.$ref.childrenKeys(...arguments) :
       firebaseChildrenKeys(this.$ref, ...arguments);
@@ -535,7 +548,8 @@ class NodeFire {
   /**
    * Adds an intercepting callback before all NodeFire database operations.  This callback can
    * modify the operation's options or block it while performing other work.
-   * @param {Function} callback The callback to invoke before each operation.  It will be passed two
+   * @param {interceptOperationsCallback} callback
+   *     The callback to invoke before each operation.  It will be passed two
    *     arguments: an operation descriptor ({ref, method, args}) and an options object.  The
    *     descriptor is read-only but the options can be modified.  The callback can return any value
    *     (which will be ignored) or a promise, to block execution of the operation (but not other
@@ -626,6 +640,15 @@ class NodeFire {
   }
 
 }
+
+/**
+ * This callback type is called `requestCallback` and is displayed as a global symbol.
+ *
+ * @callback interceptOperationsCallback
+ * @param {{ref: NodeFire, method: string, args: any[]}} op
+ * @param {any} options
+ * @return {Promise<void> | void}
+ */
 
 /**
  * Flag that indicates whether to log transactions and the number of tries needed.
@@ -859,3 +882,4 @@ function handleError(error, op, callback) {
 }
 
 module.exports = NodeFire;
+module.exports.SnapShot = Snapshot;
