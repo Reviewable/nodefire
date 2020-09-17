@@ -10,6 +10,6 @@
         "resolveJsonModule": true,
         "rootDir": "./" /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */,
         "strict": false /* Enable all strict type-checking options. */,
-        "target": "ES5" /* Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019' or 'ESNEXT'. */,
+        "target": "ES2016" /* Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019' or 'ESNEXT'. */,
     }
 }

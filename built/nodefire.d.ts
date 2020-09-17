@@ -303,7 +303,7 @@ declare class NodeFire {
     enablePermissionDebugging(legacySecret: string): void;
 }
 declare namespace NodeFire {
-    export { LOG_TRANSACTIONS, Snapshot as SnapShot, interceptOperationsCallback };
+    export { LOG_TRANSACTIONS, Snapshot, interceptOperationsCallback };
 }
 /**
   A wrapper around a Firebase DataSnapshot.  Works just like a Firebase snapshot, except that

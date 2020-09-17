@@ -882,4 +882,4 @@ function handleError(error, op, callback) {
 }
 
 module.exports = NodeFire;
-module.exports.SnapShot = Snapshot;
+module.exports.Snapshot = Snapshot;

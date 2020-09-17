@@ -1,20 +1,13 @@
 'use strict';
-var __spreadArrays = (this && this.__spreadArrays) || function () {
-    for (var s = 0, i = 0, il = arguments.length; i < il; i++) s += arguments[i].length;
-    for (var r = Array(s), k = 0, i = 0; i < il; i++)
-        for (var a = arguments[i], j = 0, jl = a.length; j < jl; j++, k++)
-            r[k] = a[j];
-    return r;
-};
-var admin = require('firebase-admin');
-var _ = require('lodash');
-var LRUCache = require('lru-cache');
-var firebaseChildrenKeys = require('firebase-childrenkeys');
-var firefight = require('firefight');
-var timers = require('safe-timers');
-var cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
-var serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
-var operationInterceptors = [];
+const admin = require('firebase-admin');
+const _ = require('lodash');
+const LRUCache = require('lru-cache');
+const firebaseChildrenKeys = require('firebase-childrenkeys');
+const firefight = require('firefight');
+const timers = require('safe-timers');
+let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
+const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
+const operationInterceptors = [];
 /**
  * A wrapper around a Firebase Admin reference, and the main entry point to the module.  You can
  * pretty much use this class as you would use the Firebase class.  The major difference is that
@@ -26,7 +19,7 @@ var operationInterceptors = [];
  * milliseconds.  Other operation-specific options are described in their respective doc comments.
  */
 // jshint latedef:false
-var NodeFire = /** @class */ (function () {
+class NodeFire {
     // jshint latedef:nofunc
     /**
      * Creates a new NodeFire wrapper around a raw Firebase Admin reference.
@@ -34,11 +27,12 @@ var NodeFire = /** @class */ (function () {
      * @param {admin.database.Query} ref A fully authenticated Firebase Admin reference or query.
      * @param {Object} scope Optional dictionary that will be used for interpolating paths.
      */
-    function NodeFire(ref, scope) {
-        var refIsNonNullObject = typeof ref === 'object' && ref !== null;
+    constructor(ref, scope) {
+        const refIsNonNullObject = typeof ref === 'object' && ref !== null;
         if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
             typeof ref.ref.transaction !== 'function') {
-            throw new Error("Expected first argument passed to NodeFire constructor to be a Firebase Database reference,\n        but got \"" + ref + "\".");
+            throw new Error(`Expected first argument passed to NodeFire constructor to be a Firebase Database reference,
+        but got "${ref}".`);
         }
         this.$ref = ref;
         this.$scope = scope || {};
@@ -49,97 +43,69 @@ var NodeFire = /** @class */ (function () {
         trackTimeOffset(this);
         trackDisconnect(this);
     }
-    Object.defineProperty(NodeFire, "SERVER_TIMESTAMP", {
-        /**
-         * Returns a placeholder value for auto-populating the current timestamp (time since the Unix
-         * epoch, in milliseconds) as determined by the Firebase servers.
-         * @return {Object} A timestamp placeholder value.
-         */
-        get: function () {
-            return {
-                '.sv': 'timestamp'
-            };
-        },
-        enumerable: false,
-        configurable: true
-    });
-    Object.defineProperty(NodeFire.prototype, "database", {
-        /**
-         * Returns the database instance corresponding to this reference.
-         * @return {admin.database.Database} The database instance corresponding to this reference.
-         */
-        get: function () {
-            return this.$ref.ref.database;
-        },
-        enumerable: false,
-        configurable: true
-    });
-    Object.defineProperty(NodeFire.prototype, "key", {
-        /**
-         * Returns the last part of this reference's path. The key of a root reference is `null`.
-         * @return {string|null} The last part this reference's path.
-         */
-        get: function () {
-            return this.$ref.ref.key;
-        },
-        enumerable: false,
-        configurable: true
-    });
-    Object.defineProperty(NodeFire.prototype, "path", {
-        /**
-         * Returns just the path component of the reference's URL.
-         * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
-         */
-        get: function () {
-            if (!this._path) {
-                this._path =
-                    decodeURIComponent(this.$ref.toString()).slice(this.$ref.ref.root.toString().length - 1);
-            }
-            return this._path;
-        },
-        enumerable: false,
-        configurable: true
-    });
-    Object.defineProperty(NodeFire.prototype, "ref", {
-        /**
-         * Returns a NodeFire reference at the same location as this query or reference.
-         * @return {NodeFire|null} A NodeFire reference at the same location as this query or reference.
-         */
-        get: function () {
-            if (this.$ref.isEqual(this.$ref.ref))
-                return this;
-            return new NodeFire(this.$ref.ref, this.$scope);
-        },
-        enumerable: false,
-        configurable: true
-    });
-    Object.defineProperty(NodeFire.prototype, "root", {
-        /**
-         * Returns a NodeFire reference to the root of the database.
-         * @return {NodeFire} The root reference of the database.
-         */
-        get: function () {
-            if (this.$ref.isEqual(this.$ref.ref.root))
-                return this;
-            return new NodeFire(this.$ref.ref.root, this.$scope);
-        },
-        enumerable: false,
-        configurable: true
-    });
-    Object.defineProperty(NodeFire.prototype, "parent", {
-        /**
-         * Returns a NodeFire reference to the parent location of this reference. The parent of a root
-         * reference is `null`.
-         * @return {NodeFire|null} The parent location of this reference.
-         */
-        get: function () {
-            if (this.$ref.ref.parent === null)
-                return null;
-            return new NodeFire(this.$ref.ref.parent, this.$scope);
-        },
-        enumerable: false,
-        configurable: true
-    });
+    /**
+     * Returns a placeholder value for auto-populating the current timestamp (time since the Unix
+     * epoch, in milliseconds) as determined by the Firebase servers.
+     * @return {Object} A timestamp placeholder value.
+     */
+    static get SERVER_TIMESTAMP() {
+        return {
+            '.sv': 'timestamp'
+        };
+    }
+    /**
+     * Returns the database instance corresponding to this reference.
+     * @return {admin.database.Database} The database instance corresponding to this reference.
+     */
+    get database() {
+        return this.$ref.ref.database;
+    }
+    /**
+     * Returns the last part of this reference's path. The key of a root reference is `null`.
+     * @return {string|null} The last part this reference's path.
+     */
+    get key() {
+        return this.$ref.ref.key;
+    }
+    /**
+     * Returns just the path component of the reference's URL.
+     * @return {string} The path component of the Firebase URL wrapped by this NodeFire object.
+     */
+    get path() {
+        if (!this._path) {
+            this._path =
+                decodeURIComponent(this.$ref.toString()).slice(this.$ref.ref.root.toString().length - 1);
+        }
+        return this._path;
+    }
+    /**
+     * Returns a NodeFire reference at the same location as this query or reference.
+     * @return {NodeFire|null} A NodeFire reference at the same location as this query or reference.
+     */
+    get ref() {
+        if (this.$ref.isEqual(this.$ref.ref))
+            return this;
+        return new NodeFire(this.$ref.ref, this.$scope);
+    }
+    /**
+     * Returns a NodeFire reference to the root of the database.
+     * @return {NodeFire} The root reference of the database.
+     */
+    get root() {
+        if (this.$ref.isEqual(this.$ref.ref.root))
+            return this;
+        return new NodeFire(this.$ref.ref.root, this.$scope);
+    }
+    /**
+     * Returns a NodeFire reference to the parent location of this reference. The parent of a root
+     * reference is `null`.
+     * @return {NodeFire|null} The parent location of this reference.
+     */
+    get parent() {
+        if (this.$ref.ref.parent === null)
+            return null;
+        return new NodeFire(this.$ref.ref.parent, this.$scope);
+    }
     /**
      * Interpolates variables into a template string based on the object's scope (passed into the
      * constructor, if any) and the optional scope argument.  Characters forbidden by Firebase are
@@ -152,13 +118,13 @@ var NodeFire = /** @class */ (function () {
      *     This scope takes precedence if a key is present in both.
      * @return {string} The interpolated string
      */
-    NodeFire.prototype.interpolate = function (string, scope) {
+    interpolate(string, scope) {
         scope = scope ? _.assign(_.clone(this.$scope), scope) : this.$scope;
-        string = string.replace(/:([a-z-_]+)|\{(.+?)\}/gi, function (match, v1, v2) {
-            var v = (v1 || v2);
-            var parts = v.split('.');
-            var value = scope;
-            for (var i = 0; i < parts.length; i++) {
+        string = string.replace(/:([a-z-_]+)|\{(.+?)\}/gi, (match, v1, v2) => {
+            const v = (v1 || v2);
+            const parts = v.split('.');
+            let value = scope;
+            for (let i = 0; i < parts.length; i++) {
                 value = value[parts[i]];
                 if (_.isNil(value)) {
                     throw new Error('Missing or null variable "' + v + '" when expanding NodeFire path "' + string + '"');
@@ -167,40 +133,40 @@ var NodeFire = /** @class */ (function () {
             return NodeFire.escape(value);
         });
         return string;
-    };
+    }
     // TODO: add onDisconnect
     // TODO: add user/password-related methods
     /**
      * Returns a JSON-serializable representation of this object.
      * @return {Object} A JSON-serializable representation of this object.
      */
-    NodeFire.prototype.toJSON = function () {
+    toJSON() {
         return this.$ref.toJSON();
-    };
+    }
     /**
      * Returns whether or not this NodeFire instance is equivalent to the provided NodeFire instance.
      * @param {Nodefire} otherRef Another NodeFire instance against which to compare.
      * @return {boolean}
      */
-    NodeFire.prototype.isEqual = function (otherRef) {
+    isEqual(otherRef) {
         return this.$ref.isEqual(otherRef.$ref);
-    };
+    }
     /**
      * Stringifies the wrapped reference.
      * @return {string} The Firebase URL wrapped by this NodeFire object.
      */
-    NodeFire.prototype.toString = function () {
+    toString() {
         return decodeURIComponent(this.$ref.toString());
-    };
+    }
     /**
      * Creates a new NodeFire object on the same reference, but with an extended interpolation scope.
      * @param  {Object} scope A dictionary of interpolation variables that will be added to (and take
      *     precedence over) the one carried by this NodeFire object.
      * @return {NodeFire} A new NodeFire object with the same reference and new scope.
      */
-    NodeFire.prototype.scope = function (scope) {
+    scope(scope) {
         return new NodeFire(this.$ref, _.assign(_.clone(this.$scope), scope));
-    };
+    }
     /**
      * Creates a new NodeFire object on a child of this one, and optionally an augmented scope.
      * @param  {string} path The path to the desired child, relative to this reference.  The path will
@@ -210,10 +176,10 @@ var NodeFire = /** @class */ (function () {
      *     scope.
      * @return {NodeFire} A new NodeFire object on the child reference, and with the augmented scope.
      */
-    NodeFire.prototype.child = function (path, scope) {
-        var child = this.scope(scope);
+    child(path, scope) {
+        const child = this.scope(scope);
         return new NodeFire(this.$ref.child(child.interpolate(path)), child.$scope);
-    };
+    }
     /**
      * Gets this reference's current value from Firebase, and inserts it into the cache if a
      * maxCacheSize was set and the `cache` option is not false.
@@ -221,46 +187,45 @@ var NodeFire = /** @class */ (function () {
      * @return {Promise} A promise that is resolved to the reference's value, or rejected with an
      *     error.  The value returned is normalized, meaning arrays are converted to objects.
      */
-    NodeFire.prototype.get = function (options) {
-        var _this = this;
-        return invoke({ ref: this, method: 'get', args: [] }, options, function (opts) {
+    get(options) {
+        return invoke({ ref: this, method: 'get', args: [] }, options, opts => {
             if (opts.cache === undefined || opts.cache)
-                _this.cache();
-            return _this.$ref.once('value').then(function (snap) { return getNormalValue(snap); });
+                this.cache();
+            return this.$ref.once('value').then(snap => getNormalValue(snap));
         });
-    };
+    }
     /**
      * Adds this reference to the cache (if maxCacheSize set) and counts a cache hit or miss.
      */
-    NodeFire.prototype.cache = function () {
+    cache() {
         if (!cache)
             return;
-        var key = this.database.app.name + '/' + this.path;
+        const key = this.database.app.name + '/' + this.path;
         if (cache.has(key)) {
             cacheHits++;
         }
         else {
             cacheMisses++;
             cache.set(key, this);
-            this.$ref.on('value', noopCallback, function () {
+            this.$ref.on('value', noopCallback, () => {
                 if (cache)
                     cache.del(key);
             });
         }
-    };
+    }
     /**
      * Removes this reference from the cache (if maxCacheSize is set).
      * @return True if the reference was cached, false otherwise.
      */
-    NodeFire.prototype.uncache = function () {
+    uncache() {
         if (!cache)
             return;
-        var key = this.database.app.name + '/' + this.path;
+        const key = this.database.app.name + '/' + this.path;
         if (!cache.has(key))
             return false;
         cache.del(key);
         return true;
-    };
+    }
     /**
      * Sets the value at this reference.
      * @param {Object || number || string || boolean} value The value to set.
@@ -268,10 +233,9 @@ var NodeFire = /** @class */ (function () {
      * @returns {Promise<void>} A promise that is resolved when the value has been set,
      * or rejected with an error.
      */
-    NodeFire.prototype.set = function (value, options) {
-        var _this = this;
-        return invoke({ ref: this, method: 'set', args: [value] }, options, function (opts) { return _this.$ref.set(value); });
-    };
+    set(value, options) {
+        return invoke({ ref: this, method: 'set', args: [value] }, options, opts => this.$ref.set(value));
+    }
     /**
      * Updates a value at this reference, setting only the top-level keys supplied and leaving any
      * other ones as-is.
@@ -280,19 +244,17 @@ var NodeFire = /** @class */ (function () {
      * @return {Promise<void>} A promise that is resolved when the value has been updated,
      * or rejected with an error.
      */
-    NodeFire.prototype.update = function (value, options) {
-        var _this = this;
-        return invoke({ ref: this, method: 'update', args: [value] }, options, function (opts) { return _this.$ref.update(value); });
-    };
+    update(value, options) {
+        return invoke({ ref: this, method: 'update', args: [value] }, options, opts => this.$ref.update(value));
+    }
     /**
      * Removes this reference from the Firebase.
      * @return {Promise} A promise that is resolved when the value has been removed, or rejected with
      *     an error.
      */
-    NodeFire.prototype.remove = function (options) {
-        var _this = this;
-        return invoke({ ref: this, method: 'remove', args: [] }, options, function (opts) { return _this.$ref.remove(); });
-    };
+    remove(options) {
+        return invoke({ ref: this, method: 'remove', args: [] }, options, opts => this.$ref.remove());
+    }
     /**
      * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
      * want to generate a new unique key you can call newKey() directly.
@@ -300,16 +262,15 @@ var NodeFire = /** @class */ (function () {
      * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
      *     pushed value (with the same scope as this object), or rejected with an error.
      */
-    NodeFire.prototype.push = function (value, options) {
-        var _this = this;
+    push(value, options) {
         if (value === undefined || value === null) {
             return new NodeFire(this.$ref.push(), this.$scope);
         }
-        return invoke({ ref: this, method: 'push', args: [value] }, options, function (opts) {
-            var ref = _this.$ref.push(value);
-            return ref.then(function () { return new NodeFire(ref, _this.$scope); });
+        return invoke({ ref: this, method: 'push', args: [value] }, options, opts => {
+            const ref = this.$ref.push(value);
+            return ref.then(() => new NodeFire(ref, this.$scope));
         });
-    };
+    }
     /**
      * Runs a transaction at this reference.  The transaction is not applied locally first, since this
      * would be incompatible with a promise's complete-once semantics.
@@ -334,12 +295,12 @@ var NodeFire = /** @class */ (function () {
      * @return {Promise} A promise that is resolved with the (normalized) committed value if the
      *     transaction committed or with undefined if it aborted, or rejected with an error.
      */
-    NodeFire.prototype.transaction = function (updateFunction, options) {
-        var self = this; // easier than using => functions or binding explicitly
-        var tries = 0, result;
-        var startTime = self.now;
-        var prefetchDoneTime;
-        var metadata = {};
+    transaction(updateFunction, options) {
+        const self = this; // easier than using => functions or binding explicitly
+        let tries = 0, result;
+        const startTime = self.now;
+        let prefetchDoneTime;
+        const metadata = {};
         options = options || {};
         function fillMetadata(outcome) {
             if (metadata.outcome)
@@ -354,14 +315,14 @@ var NodeFire = /** @class */ (function () {
                 metadata.duration = self.now - startTime;
             }
         }
-        var op = { ref: this, method: 'transaction', args: [updateFunction] };
-        return Promise.all(_.map(operationInterceptors, function (interceptor) { return Promise.resolve(interceptor(op, options)); })).then(function () {
-            var promise = new Promise(function (resolve, reject) {
-                var wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
-                var wrappedReject = wrappedRejectNoResult;
-                var aborted, settled;
-                var inputValues = [];
-                var numConsecutiveEqualInputValues = 0;
+        const op = { ref: this, method: 'transaction', args: [updateFunction] };
+        return Promise.all(_.map(operationInterceptors, interceptor => Promise.resolve(interceptor(op, options)))).then(() => {
+            const promise = new Promise((resolve, reject) => {
+                const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
+                let wrappedReject = wrappedRejectNoResult;
+                let aborted, settled;
+                const inputValues = [];
+                let numConsecutiveEqualInputValues = 0;
                 function wrappedUpdateFunction(value) {
                     try {
                         wrappedReject = wrappedRejectNoResult;
@@ -376,7 +337,7 @@ var NodeFire = /** @class */ (function () {
                                 inputValues.push(_.cloneDeep(value));
                             }
                             if (numConsecutiveEqualInputValues >= options.detectStuck) {
-                                var error = new Error('stuck');
+                                const error = new Error('stuck');
                                 error.inputValues = inputValues;
                                 throw error;
                             }
@@ -396,12 +357,12 @@ var NodeFire = /** @class */ (function () {
                         wrappedReject(e);
                     }
                 }
-                var onceTxn, timeout;
+                let onceTxn, timeout;
                 function txn() {
                     if (!prefetchDoneTime)
                         prefetchDoneTime = self.now;
                     try {
-                        self.$ref.transaction(wrappedUpdateFunction, function (error, committed, snap) {
+                        self.$ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
                             if (error && (error.message === 'set' || error.message === 'disconnect')) {
                                 txn();
                                 return;
@@ -414,8 +375,7 @@ var NodeFire = /** @class */ (function () {
                             fillMetadata(error ? 'error' : (committed ? 'commit' : 'skip'));
                             if (NodeFire.LOG_TRANSACTIONS) {
                                 console.log(JSON.stringify({ txn: {
-                                        tries: tries,
-                                        path: self.toString().replace(/https:\/\/[^/]*/, ''),
+                                        tries, path: self.toString().replace(/https:\/\/[^/]*/, ''),
                                         outcome: metadata.outcome, value: result
                                     } }));
                             }
@@ -435,11 +395,11 @@ var NodeFire = /** @class */ (function () {
                     }
                 }
                 if (options.timeout) {
-                    timeout = timers.setTimeout(function () {
+                    timeout = timers.setTimeout(() => {
                         if (settled)
                             return;
                         aborted = true;
-                        var e = new Error('timeout');
+                        const e = new Error('timeout');
                         e.timeout = options.timeout;
                         wrappedReject(e);
                     }, options.timeout);
@@ -460,7 +420,7 @@ var NodeFire = /** @class */ (function () {
             promise.transaction = metadata;
             return promise;
         });
-    };
+    }
     /**
      * Registers a listener for an event on this reference.  Works the same as the Firebase method
      * except that the snapshot passed into the callback will be wrapped such that:
@@ -472,35 +432,31 @@ var NodeFire = /** @class */ (function () {
      * @param {() => void} cancelCallback
      * @param {any} context
      */
-    NodeFire.prototype.on = function (eventType, callback, cancelCallback, context) {
+    on(eventType, callback, cancelCallback, context) {
         cancelCallback = wrapReject(this, 'on', cancelCallback);
         this.$ref.on(eventType, captureCallback(this, eventType, callback), cancelCallback, context);
         return callback;
-    };
+    }
     /**
      * Unregisters a listener.  Works the same as the Firebase method.
      */
-    NodeFire.prototype.off = function (eventType, callback, context) {
+    off(eventType, callback, context) {
         this.$ref.off(eventType, callback && popCallback(this, eventType, callback), context);
-    };
+    }
     /**
      * Generates a unique string that can be used as a key in Firebase.
      * @return {string} A unique string that satisfies Firebase's key syntax constraints.
      */
-    NodeFire.prototype.newKey = function () {
+    newKey() {
         return this.$ref.push().key;
-    };
-    Object.defineProperty(NodeFire.prototype, "now", {
-        /**
-         * Returns the current timestamp after adjusting for the Firebase-computed server time offset.
-         * @return {number} The current time in integer milliseconds since the epoch.
-         */
-        get: function () {
-            return new Date().getTime() + serverTimeOffsets[this.database.app.name];
-        },
-        enumerable: false,
-        configurable: true
-    });
+    }
+    /**
+     * Returns the current timestamp after adjusting for the Firebase-computed server time offset.
+     * @return {number} The current time in integer milliseconds since the epoch.
+     */
+    get now() {
+        return new Date().getTime() + serverTimeOffsets[this.database.app.name];
+    }
     /**
      * Fetches the keys of the current reference's children without also fetching all the contents,
      * using the Firebase REST API.
@@ -513,17 +469,18 @@ var NodeFire = /** @class */ (function () {
      *   - agent:
      * @return {Promise<string[]>} A promise that resolves to an array of key strings.
      */
-    NodeFire.prototype.childrenKeys = function (options) {
-        var _a;
-        return this.$ref.childrenKeys ? (_a = this.$ref).childrenKeys.apply(_a, arguments) : firebaseChildrenKeys.apply(void 0, __spreadArrays([this.$ref], arguments));
-    };
+    childrenKeys(options) {
+        return this.$ref.childrenKeys ?
+            this.$ref.childrenKeys(...arguments) :
+            firebaseChildrenKeys(this.$ref, ...arguments);
+    }
     /**
      * Turns Firebase low-level connection logging on or off.
      * @param {boolean} enable Whether to enable or disable logging.
      */
-    NodeFire.enableFirebaseLogging = function (enable) {
+    static enableFirebaseLogging(enable) {
         admin.database.enableLogging(enable);
-    };
+    }
     /**
      * Turns debugging of permission denied errors on and off for the database this ref is attached
      * to.  When turned on, permission denied errors will have an additional permissionTrace property
@@ -532,10 +489,10 @@ var NodeFire = /** @class */ (function () {
      * @param {string} legacySecret A legacy database secret, needed to access the old API that allows
      *     simulating request with debug feedback.  Pass a falsy value to turn off debugging.
      */
-    NodeFire.prototype.enablePermissionDebugging = function (legacySecret) {
+    enablePermissionDebugging(legacySecret) {
         if (legacySecret) {
             if (!simulators[this.database.app.name]) {
-                var authOverride = this.database.app.options.databaseAuthVariableOverride;
+                const authOverride = this.database.app.options.databaseAuthVariableOverride;
                 if (!authOverride || !authOverride.uid) {
                     throw new Error('You must initialize your database with a databaseAuthVariableOverride that includes ' +
                         'a uid');
@@ -546,7 +503,7 @@ var NodeFire = /** @class */ (function () {
         else {
             delete simulators[this.database.app.name];
         }
-    };
+    }
     /**
      * Adds an intercepting callback before all NodeFire database operations.  This callback can
      * modify the operation's options or block it while performing other work.
@@ -557,21 +514,21 @@ var NodeFire = /** @class */ (function () {
      *     (which will be ignored) or a promise, to block execution of the operation (but not other
      *     interceptors) until the promise settles.
      */
-    NodeFire.interceptOperations = function (callback) {
+    static interceptOperations(callback) {
         operationInterceptors.push(callback);
-    };
+    }
     /**
      * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not
      * used unless you set a non-zero maximum.
      * @param {number} max The maximum number of values to keep pinned in the cache.
      */
-    NodeFire.setCacheSize = function (max) {
+    static setCacheSize(max) {
         if (max) {
             if (cache) {
                 cache.max = max;
             }
             else {
-                cache = new LRUCache({ max: max, dispose: function (key, ref) {
+                cache = new LRUCache({ max, dispose(key, ref) {
                         ref.$ref.off('value', noopCallback);
                     } });
             }
@@ -581,7 +538,7 @@ var NodeFire = /** @class */ (function () {
                 cache.reset();
             cache = null;
         }
-    };
+    }
     /**
      * Sets the maximum number of pinned values to retain in the cache when an app gets disconnected.
      * By default all values are retained, but if your cache size is high they'll all need to be
@@ -590,54 +547,53 @@ var NodeFire = /** @class */ (function () {
      * @param {number} max The maximum number of values from a disconnected app to keep pinned in the
      *        cache.
      */
-    NodeFire.setCacheSizeForDisconnectedApp = function (max) {
+    static setCacheSizeForDisconnectedApp(max) {
         maxCacheSizeForDisconnectedApp = max;
-    };
+    }
     /**
      * Gets the current number of values pinned in the cache.
      * @return {number} The current size of the cache.
      */
-    NodeFire.getCacheCount = function () {
+    static getCacheCount() {
         return cache ? cache.itemCount : 0;
-    };
+    }
     /**
      * Gets the current cache hit rate.  This is very approximate, as it's only counted for get() and
      * transaction() calls, and is unable to count ancestor hits, where the ancestor of the requested
      * item is actually cached.
      * @return {number} The cache's current hit rate.
      */
-    NodeFire.getCacheHitRate = function () {
+    static getCacheHitRate() {
         return (cacheHits || cacheMisses) ? cacheHits / (cacheHits + cacheMisses) : 0;
-    };
+    }
     /**
      * Resets the cache's hit rate counters back to zero.
      */
-    NodeFire.resetCacheHitRate = function () {
+    static resetCacheHitRate() {
         cacheHits = cacheMisses = 0;
-    };
+    }
     /**
      * Escapes a string to make it an acceptable Firebase key.
      * @param {string} key The proposed key to escape.
      * @return {string} The escaped key.
      */
-    NodeFire.escape = function (key) {
+    static escape(key) {
         // eslint-disable-next-line no-control-regex
-        return key.toString().replace(/[\x00-\x1f\\.$#[\]\x7f/]/g, function (char) {
+        return key.toString().replace(/[\x00-\x1f\\.$#[\]\x7f/]/g, char => {
             return '\\' + _.padStart(char.charCodeAt(0).toString(16), 2, '0');
         });
-    };
+    }
     /**
      * Unescapes a previously escaped (or interpolated) key.
      * @param {string} key The key to unescape.
      * @return {string} The original unescaped key.
      */
-    NodeFire.unescape = function (key) {
-        return key.toString().replace(/\\[0-9a-f]{2}/gi, function (code) {
+    static unescape(key) {
+        return key.toString().replace(/\\[0-9a-f]{2}/gi, code => {
             return String.fromCharCode(parseInt(code.slice(1), 16));
         });
-    };
-    return NodeFire;
-}());
+    }
+}
 /**
  * This callback type is called `requestCallback` and is displayed as a global symbol.
  *
@@ -665,40 +621,30 @@ wrapNodeFire('orderByValue');
   ref returns a NodeFire instance, val() normalizes the value, and child() takes an optional
   refining scope.
  */
-var Snapshot = /** @class */ (function () {
-    function Snapshot(snap, nodeFire) {
+class Snapshot {
+    constructor(snap, nodeFire) {
         this.$snap = snap;
         this.$nodeFire = nodeFire;
     }
-    Object.defineProperty(Snapshot.prototype, "key", {
-        get: function () {
-            return this.$snap.key;
-        },
-        enumerable: false,
-        configurable: true
-    });
-    Object.defineProperty(Snapshot.prototype, "ref", {
-        get: function () {
-            return new NodeFire(this.$snap.ref, this.$nodeFire.$scope);
-        },
-        enumerable: false,
-        configurable: true
-    });
-    Snapshot.prototype.val = function () {
+    get key() {
+        return this.$snap.key;
+    }
+    get ref() {
+        return new NodeFire(this.$snap.ref, this.$nodeFire.$scope);
+    }
+    val() {
         return getNormalValue(this.$snap);
-    };
-    Snapshot.prototype.child = function (path, scope) {
-        var childNodeFire = this.$nodeFire.scope(scope);
+    }
+    child(path, scope) {
+        const childNodeFire = this.$nodeFire.scope(scope);
         return new Snapshot(this.$snap.child(childNodeFire.interpolate(path)), childNodeFire);
-    };
-    Snapshot.prototype.forEach = function (callback) {
-        var _this = this;
-        this.$snap.forEach(function (child) {
-            return callback(new Snapshot(child, _this.$nodeFire));
+    }
+    forEach(callback) {
+        this.$snap.forEach(child => {
+            return callback(new Snapshot(child, this.$nodeFire));
         });
-    };
-    return Snapshot;
-}());
+    }
+}
 /* Snapshot methods that work the same. */
 delegateSnapshot('toJSON');
 delegateSnapshot('exists');
@@ -710,10 +656,10 @@ delegateSnapshot('numChildren');
 // wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
 // call to off().
 function captureCallback(nodeFire, eventType, callback) {
-    var key = eventType + '::' + nodeFire.toString();
+    const key = eventType + '::' + nodeFire.toString();
     callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || {};
     callback.$nodeFireCallbacks[key] = callback.$nodeFireCallbacks[key] || [];
-    var nodeFireCallback = function (snap, previousChildKey) {
+    const nodeFireCallback = function (snap, previousChildKey) {
         // eslint-disable-next-line no-invalid-this
         runGenerator(callback.call(this, new Snapshot(snap, nodeFire), previousChildKey));
     };
@@ -721,11 +667,11 @@ function captureCallback(nodeFire, eventType, callback) {
     return nodeFireCallback;
 }
 function popCallback(nodeFire, eventType, callback) {
-    var key = eventType + '::' + nodeFire.toString();
+    const key = eventType + '::' + nodeFire.toString();
     return callback.$nodeFireCallbacks[key].pop();
 }
 function runGenerator(o) {
-    var promise;
+    let promise;
     if (o instanceof Promise) {
         promise = o;
     }
@@ -733,7 +679,7 @@ function runGenerator(o) {
         promise = Promise.co(o);
     }
     if (promise)
-        promise.catch(function (error) { throw error; });
+        promise.catch(error => { throw error; });
 }
 function wrapNodeFire(method) {
     NodeFire.prototype[method] = function () {
@@ -746,7 +692,7 @@ function delegateSnapshot(method) {
     };
 }
 function wrapReject(nodefire, method, value, reject) {
-    var hasValue = true;
+    let hasValue = true;
     if (!reject) {
         reject = value;
         hasValue = false;
@@ -754,27 +700,27 @@ function wrapReject(nodefire, method, value, reject) {
     if (!reject)
         return reject;
     return function (error) {
-        handleError(error, { ref: nodefire, method: method, args: hasValue ? [value] : [] }, reject);
+        handleError(error, { ref: nodefire, method, args: hasValue ? [value] : [] }, reject);
     };
 }
 function noopCallback() { }
 function trackTimeOffset(ref, recover) {
-    var appName = ref.database.app.name;
+    const appName = ref.database.app.name;
     if (!recover) {
         if (appName in serverTimeOffsets)
             return;
         serverTimeOffsets[appName] = 0;
     }
-    ref.root.child('.info/serverTimeOffset').on('value', function (snap) {
+    ref.root.child('.info/serverTimeOffset').on('value', snap => {
         serverTimeOffsets[appName] = snap.val();
     }, _.bind(trackTimeOffset, ref, true));
 }
 function trackDisconnect(ref, recover) {
-    var appName = ref.database.app.name;
+    const appName = ref.database.app.name;
     if (!recover && serverDisconnects[appName])
         return;
     serverDisconnects[appName] = true;
-    ref.root.child('.info/connected').on('value', function (snap) {
+    ref.root.child('.info/connected').on('value', snap => {
         if (!snap.val())
             trimCache(ref);
     }, _.bind(trackDisconnect, ref, true));
@@ -782,9 +728,9 @@ function trackDisconnect(ref, recover) {
 function trimCache(ref) {
     if (!cache || cache.max <= maxCacheSizeForDisconnectedApp)
         return;
-    var prefix = ref.database.app.name + '/';
-    var count = 0;
-    cache.forEach(function (value, key) {
+    const prefix = ref.database.app.name + '/';
+    let count = 0;
+    cache.forEach((value, key) => {
         if (key.slice(0, prefix.length) !== prefix)
             return;
         if (++count <= maxCacheSizeForDisconnectedApp)
@@ -797,41 +743,40 @@ function getNormalValue(snap) {
 }
 function getNormalRawValue(value) {
     if (_.isArray(value)) {
-        var normalValue_1 = {};
-        _.forEach(value, function (item, key) {
+        const normalValue = {};
+        _.forEach(value, (item, key) => {
             if (!_.isNil(item)) {
-                normalValue_1[key] = getNormalRawValue(item);
+                normalValue[key] = getNormalRawValue(item);
             }
         });
-        value = normalValue_1;
+        value = normalValue;
     }
     else if (_.isObject(value)) {
-        _.forEach(value, function (item, key) {
+        _.forEach(value, (item, key) => {
             value[key] = getNormalRawValue(item);
         });
     }
     return value;
 }
-function invoke(op, options, fn) {
-    if (options === void 0) { options = {}; }
-    return Promise.all(_.map(operationInterceptors, function (interceptor) { return Promise.resolve(interceptor(op, options)); })).then(function () {
-        var promises = [];
-        var timeout, settled;
+function invoke(op, options = {}, fn) {
+    return Promise.all(_.map(operationInterceptors, interceptor => Promise.resolve(interceptor(op, options)))).then(() => {
+        const promises = [];
+        let timeout, settled;
         if (options.timeout) {
-            promises.push(new Promise(function (resolve, reject) {
-                timeout = timers.setTimeout(function () {
+            promises.push(new Promise((resolve, reject) => {
+                timeout = timers.setTimeout(() => {
                     if (!settled)
                         reject(new Error('timeout'));
                 }, options.timeout);
             }));
         }
-        promises.push(Promise.resolve(fn(options)).then(function (result) {
+        promises.push(Promise.resolve(fn(options)).then(result => {
             settled = true;
             if (timeout)
                 timeout.clear();
             return result;
         }));
-        return Promise.race(promises).catch(function (e) {
+        return Promise.race(promises).catch(e => {
             settled = true;
             if (timeout)
                 timeout.clear();
@@ -842,13 +787,12 @@ function invoke(op, options, fn) {
     });
 }
 function handleError(error, op, callback) {
-    var args = _.map(op.args, function (arg) { return _.isFunction(arg) ? "<function" + (arg.name ? ' ' + arg.name : '') + ">" : arg; });
-    var argsString = JSON.stringify(args);
+    let args = _.map(op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
+    const argsString = JSON.stringify(args);
     if (argsString.length > 500)
         args = argsString.slice(0, 500) + '...';
     error.firebase = {
-        ref: op.ref.toString(), method: op.method,
-        args: args,
+        ref: op.ref.toString(), method: op.method, args,
         code: (error.code || error.message || '').toLowerCase() || undefined
     };
     if (error.message === 'timeout' && error.timeout) {
@@ -862,15 +806,15 @@ function handleError(error, op, callback) {
     if (!error.code)
         error.code = error.message;
     error.message = 'Firebase: ' + error.message;
-    var simulator = simulators[op.ref.database.app.name];
+    const simulator = simulators[op.ref.database.app.name];
     if (!simulator || !simulator.isPermissionDenied(error))
         return callback(error);
-    var method = op.method === 'get' ? 'once' : op.method;
-    var authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
-    return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(function (explanation) {
+    const method = op.method === 'get' ? 'once' : op.method;
+    const authOverride = op.ref.database.app.options.databaseAuthVariableOverride;
+    return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
         error.firebase.permissionTrace = explanation;
         return callback(error);
     });
 }
 module.exports = NodeFire;
-module.exports.SnapShot = Snapshot;
+module.exports.Snapshot = Snapshot;
