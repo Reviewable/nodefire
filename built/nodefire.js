@@ -1,5 +1,10 @@
-'use strict';
-const admin = require('firebase-admin');
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Snapshot = void 0;
+const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const _ = require('lodash');
 const LRUCache = require('lru-cache');
 const firebaseChildrenKeys = require('firebase-childrenkeys');
@@ -18,14 +23,12 @@ const operationInterceptors = [];
  * standard option is `timeout`, which will cause an operation to time out after the given number of
  * milliseconds.  Other operation-specific options are described in their respective doc comments.
  */
-// jshint latedef:false
 class NodeFire {
-    // jshint latedef:nofunc
     /**
      * Creates a new NodeFire wrapper around a raw Firebase Admin reference.
      *
-     * @param {admin.database.Query} ref A fully authenticated Firebase Admin reference or query.
-     * @param {Object} scope Optional dictionary that will be used for interpolating paths.
+     * @param ref A fully authenticated Firebase Admin reference or query.
+     * @param scope Optional dictionary that will be used for interpolating paths.
      */
     constructor(ref, scope) {
         const refIsNonNullObject = typeof ref === 'object' && ref !== null;
@@ -479,7 +482,7 @@ class NodeFire {
      * @param {boolean} enable Whether to enable or disable logging.
      */
     static enableFirebaseLogging(enable) {
-        admin.database.enableLogging(enable);
+        firebase_admin_1.default.database.enableLogging(enable);
     }
     /**
      * Turns debugging of permission denied errors on and off for the database this ref is attached
@@ -594,6 +597,7 @@ class NodeFire {
         });
     }
 }
+exports.default = NodeFire;
 /**
  * This callback type is called `requestCallback` and is displayed as a global symbol.
  *
@@ -645,6 +649,7 @@ class Snapshot {
         });
     }
 }
+exports.Snapshot = Snapshot;
 /* Snapshot methods that work the same. */
 delegateSnapshot('toJSON');
 delegateSnapshot('exists');
@@ -704,7 +709,7 @@ function wrapReject(nodefire, method, value, reject) {
     };
 }
 function noopCallback() { }
-function trackTimeOffset(ref, recover) {
+function trackTimeOffset(ref, recover = false) {
     const appName = ref.database.app.name;
     if (!recover) {
         if (appName in serverTimeOffsets)
@@ -715,7 +720,7 @@ function trackTimeOffset(ref, recover) {
         serverTimeOffsets[appName] = snap.val();
     }, _.bind(trackTimeOffset, ref, true));
 }
-function trackDisconnect(ref, recover) {
+function trackDisconnect(ref, recover = false) {
     const appName = ref.database.app.name;
     if (!recover && serverDisconnects[appName])
         return;
@@ -816,5 +821,3 @@ function handleError(error, op, callback) {
         return callback(error);
     });
 }
-module.exports = NodeFire;
-module.exports.Snapshot = Snapshot;

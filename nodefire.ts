@@ -1,6 +1,5 @@
-'use strict';
+import {default as admin} from 'firebase-admin';
 
-const admin = require('firebase-admin');
 const _ = require('lodash');
 const LRUCache = require('lru-cache');
 const firebaseChildrenKeys = require('firebase-childrenkeys');
@@ -11,6 +10,20 @@ let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infi
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors = [];
 
+interface Scope {
+  [key: string]: any;
+}
+
+interface NodeFireError extends Error {
+  inputValues?: any;
+  timeout?: number;
+}
+
+interface Reference extends admin.database.Reference {
+  childrenKeys?;
+  database?;
+  ref: Reference;
+}
 
 /**
  * A wrapper around a Firebase Admin reference, and the main entry point to the module.  You can
@@ -22,17 +35,20 @@ const operationInterceptors = [];
  * standard option is `timeout`, which will cause an operation to time out after the given number of
  * milliseconds.  Other operation-specific options are described in their respective doc comments.
  */
-// jshint latedef:false
-class NodeFire {
+export default class NodeFire {
 // jshint latedef:nofunc
+  static LOG_TRANSACTIONS: boolean;
+  $ref: Reference;
+  $scope: Scope;
+  private _path?: string;
 
   /**
    * Creates a new NodeFire wrapper around a raw Firebase Admin reference.
    *
-   * @param {admin.database.Query} ref A fully authenticated Firebase Admin reference or query.
-   * @param {Object} scope Optional dictionary that will be used for interpolating paths.
+   * @param ref A fully authenticated Firebase Admin reference or query.
+   * @param scope Optional dictionary that will be used for interpolating paths.
    */
-  constructor(ref, scope) {
+  constructor(ref: Reference, scope: Scope) {
     const refIsNonNullObject = typeof ref === 'object' && ref !== null;
     if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
         typeof ref.ref.transaction !== 'function') {
@@ -132,7 +148,7 @@ class NodeFire {
    *     This scope takes precedence if a key is present in both.
    * @return {string} The interpolated string
    */
-  interpolate(string, scope) {
+  interpolate(string, scope?) {
     scope = scope ? _.assign(_.clone(this.$scope), scope) : this.$scope;
     string = string.replace(/:([a-z-_]+)|\{(.+?)\}/gi, (match, v1, v2) => {
       const v = (v1 || v2);
@@ -335,7 +351,7 @@ class NodeFire {
     let tries = 0, result;
     const startTime = self.now;
     let prefetchDoneTime;
-    const metadata = {};
+    const metadata: {outcome?; tries?; prefetchDuration?; duration?;} = {};
     options = options || {};
 
     function fillMetadata(outcome) {
@@ -377,7 +393,7 @@ class NodeFire {
                 inputValues.push(_.cloneDeep(value));
               }
               if (numConsecutiveEqualInputValues >= options.detectStuck) {
-                const error = new Error('stuck');
+                const error: NodeFireError = new Error('stuck');
                 error.inputValues = inputValues;
                 throw error;
               }
@@ -431,7 +447,7 @@ class NodeFire {
           timeout = timers.setTimeout(() => {
             if (settled) return;
             aborted = true;
-            const e = new Error('timeout');
+            const e: NodeFireError = new Error('timeout');
             e.timeout = options.timeout;
             wrappedReject(e);
           }, options.timeout);
@@ -449,8 +465,8 @@ class NodeFire {
         }
       });
 
-      promise.transaction = metadata;
-      return promise;
+      (promise as any).transaction = metadata;
+      return promise as Promise<void>;
     });
   }
 
@@ -672,7 +688,9 @@ wrapNodeFire('orderByValue');
   ref returns a NodeFire instance, val() normalizes the value, and child() takes an optional
   refining scope.
  */
-class Snapshot {
+export class Snapshot {
+  $snap;
+  $nodeFire;
   constructor(snap, nodeFire) {
     this.$snap = snap;
     this.$nodeFire = nodeFire;
@@ -735,8 +753,8 @@ function runGenerator(o) {
   let promise;
   if (o instanceof Promise) {
     promise = o;
-  } else if (o && typeof o.next === 'function' && typeof o.throw === 'function' && Promise.co) {
-    promise = Promise.co(o);
+  } else if (o && typeof o.next === 'function' && typeof o.throw === 'function' && (Promise as any).co) {
+    promise = (Promise as any).co(o);
   }
   if (promise) promise.catch(error => {throw error;});
 }
@@ -756,7 +774,7 @@ function delegateSnapshot(method) {
   };
 }
 
-function wrapReject(nodefire, method, value, reject) {
+function wrapReject(nodefire, method, value, reject?) {
   let hasValue = true;
   if (!reject) {
     reject = value;
@@ -770,7 +788,7 @@ function wrapReject(nodefire, method, value, reject) {
 
 function noopCallback() {/* empty */}
 
-function trackTimeOffset(ref, recover) {
+function trackTimeOffset(ref, recover: boolean = false) {
   const appName = ref.database.app.name;
   if (!recover) {
     if (appName in serverTimeOffsets) return;
@@ -781,7 +799,7 @@ function trackTimeOffset(ref, recover) {
   }, _.bind(trackTimeOffset, ref, true));
 }
 
-function trackDisconnect(ref, recover) {
+function trackDisconnect(ref, recover: boolean = false) {
   const appName = ref.database.app.name;
   if (!recover && serverDisconnects[appName]) return;
   serverDisconnects[appName] = true;
@@ -822,7 +840,7 @@ function getNormalRawValue(value) {
   return value;
 }
 
-function invoke(op, options = {}, fn) {
+function invoke(op, options: {timeout?: number} = {}, fn) {
   return Promise.all(
     _.map(
       operationInterceptors,
@@ -880,6 +898,3 @@ function handleError(error, op, callback) {
     return callback(error);
   });
 }
-
-module.exports = NodeFire;
-module.exports.Snapshot = Snapshot;
