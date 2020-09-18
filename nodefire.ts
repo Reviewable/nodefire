@@ -71,9 +71,6 @@ export default class NodeFire {
 
     this.$ref = ref;
     this.$scope = scope || {};
-    /**
-     * @private
-     */
     this._path = undefined;  // initialized lazily
 
     trackTimeOffset(this);
@@ -121,9 +118,9 @@ export default class NodeFire {
 
   /**
    * Returns a NodeFire reference at the same location as this query or reference.
-   * @return {NodeFire|null} A NodeFire reference at the same location as this query or reference.
+   * @return A NodeFire reference at the same location as this query or reference.
    */
-  get ref(): NodeFire | null {
+  get ref(): NodeFire {
     if (this.$ref.isEqual(this.$ref.ref)) return this;
     return new NodeFire(this.$ref.ref, this.$scope);
   }
@@ -169,7 +166,7 @@ export default class NodeFire {
         value = value[parts[i]];
         if (_.isNil(value)) {
           throw new Error(
-            'Missing or null variable "' + v + '" when expanding NodeFire path "' + template + '"');
+            `Missing or null variable "${v}" when expanding NodeFire path "${template}"`);
         }
       }
       return NodeFire.escape(value);
@@ -322,7 +319,7 @@ export default class NodeFire {
    * @return A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
-  push(value: Value, options: any): Promise<NodeFire> | NodeFire {
+  push(value: Value, options: { timeout?: number }): Promise<NodeFire> | NodeFire {
     if (value === undefined || value === null) {
       return new NodeFire(this.$ref.push(), this.$scope);
     }
@@ -333,8 +330,8 @@ export default class NodeFire {
   }
 
   /**
-   * Runs a transaction at this reference.  The transaction is not applied locally first, since this
-   * would be incompatible with a promise's complete-once semantics.
+   * Runs a transaction at this reference.  The transaction is not applied locally first, since
+   * this would be incompatible with a promise's complete-once semantics.
    *
    * There's a bug in the Firebase SDK that fails to update the local value and will cause a
    * transaction to fail repeatedly until it fails with maxretry.  If you specify the detectStuck
@@ -356,12 +353,22 @@ export default class NodeFire {
    * @return {Promise} A promise that is resolved with the (normalized) committed value if the
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
-  transaction(updateFunction: (Value) => Value, options: {detectStuck?: number, prefetchValue?: boolean, timeout?: number}): Promise<void> {
+  transaction(
+    updateFunction: (Value) => Value,
+    options: {detectStuck?: number,
+    prefetchValue?: boolean,
+    timeout?: number
+  }): Promise<void> {
     const self = this;  // easier than using => functions or binding explicitly
     let tries = 0, result: any;
     const startTime = self.now;
     let prefetchDoneTime: number;
-    const metadata: {outcome?: any; tries?: any; prefetchDuration?: number; duration?: number;} = {};
+    const metadata: {
+      outcome?: any;
+      tries?: any;
+      prefetchDuration?:
+      number; duration?: number;
+    } = {};
     options = options || {};
 
     function fillMetadata(outcome: any) {
@@ -465,8 +472,8 @@ export default class NodeFire {
         if (options.prefetchValue || options.prefetchValue === undefined) {
           // Prefetch the data and keep it "live" during the transaction, to avoid running the
           // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
-          // data from the server.  Also pull it into the cache to speed future transactions at this
-          // ref.
+          // data from the server.  Also pull it into the cache to speed future transactions at
+          // this ref.
           self.cache();
           onceTxn = _.once(txn);
           self.$ref.on('value', onceTxn, wrappedRejectNoResult);
@@ -494,7 +501,7 @@ export default class NodeFire {
   on(
     eventType: admin.database.EventType,
     callback: (a: admin.database.DataSnapshot, b?: string) => any,
-    cancelCallback: object | ((a: Error) => any), context: object
+    cancelCallback: ((a: Error) => any), context: object
   ): (a: admin.database.DataSnapshot, b?: string) => any {
     cancelCallback = wrapReject(this, 'on', cancelCallback);
     this.$ref.on(
@@ -535,13 +542,17 @@ export default class NodeFire {
    *
    * @param options An options
    * object with the following items, all optional:
-   *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient errors
-   *               (defaults to 1)
+   *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient
+   *        errors (defaults to 1)
    *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
-   *   - agent:
+   *   - agent: http.Agent
    * @return {Promise<string[]>} A promise that resolves to an array of key strings.
    */
-  childrenKeys(options: { maxTries?: number, retryInterval?: number, agent?: http.Agent}): Promise<string[]> {
+  childrenKeys(options: {
+    maxTries?: number,
+    retryInterval?: number,
+    agent?: http.Agent
+  }): Promise<string[]> {
     return this.$ref.childrenKeys ?
       this.$ref.childrenKeys(options) :
       firebaseChildrenKeys(this.$ref, options);
