@@ -35,6 +35,7 @@
     "safe-timers": "1.x"
   },
   "devDependencies": {
-    "eslint": "7.x"
+    "eslint": "7.x",
+    "typescript": "^4.0.x"
   }
 }
