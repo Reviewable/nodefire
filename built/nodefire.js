@@ -1,15 +1,34 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Snapshot = void 0;
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
-const _ = require('lodash');
-const LRUCache = require('lru-cache');
-const firebaseChildrenKeys = require('firebase-childrenkeys');
-const firefight = require('firefight');
-const timers = require('safe-timers');
+const timers = __importStar(require("safe-timers"));
+const lodash_1 = __importDefault(require("lodash"));
+const lru_cache_1 = __importDefault(require("lru-cache"));
+const firebase_childrenkeys_1 = __importDefault(require("firebase-childrenkeys"));
+const firefight = __importStar(require("firefight"));
 let cache, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors = [];
@@ -114,28 +133,27 @@ class NodeFire {
      * constructor, if any) and the optional scope argument.  Characters forbidden by Firebase are
      * escaped into a "\xx" hex format.
      *
-     * @param  {string} string The template string to interpolate.  You can refer to scope variables
+     * @param  template The template string to interpolate.  You can refer to scope variables
      *     using both ":varName" and "{varName}" notations, with the latter also accepting
      *     dot-separated child attributes like "{varName.child1.child2}".
-     * @param  {Object} scope Optional bindings to add to the ones carried by this NodeFire object.
+     * @param  scope Optional bindings to add to the ones carried by this NodeFire object.
      *     This scope takes precedence if a key is present in both.
      * @return {string} The interpolated string
      */
-    interpolate(string, scope) {
-        scope = scope ? _.assign(_.clone(this.$scope), scope) : this.$scope;
-        string = string.replace(/:([a-z-_]+)|\{(.+?)\}/gi, (match, v1, v2) => {
+    interpolate(template, scope) {
+        const filledScope = scope ? lodash_1.default.assign(lodash_1.default.clone(this.$scope), scope) : this.$scope;
+        return template.replace(/:([a-z-_]+)|\{(.+?)\}/gi, (match, v1, v2) => {
             const v = (v1 || v2);
             const parts = v.split('.');
-            let value = scope;
+            let value = filledScope;
             for (let i = 0; i < parts.length; i++) {
                 value = value[parts[i]];
-                if (_.isNil(value)) {
-                    throw new Error('Missing or null variable "' + v + '" when expanding NodeFire path "' + string + '"');
+                if (lodash_1.default.isNil(value)) {
+                    throw new Error('Missing or null variable "' + v + '" when expanding NodeFire path "' + template + '"');
                 }
             }
             return NodeFire.escape(value);
         });
-        return string;
     }
     // TODO: add onDisconnect
     // TODO: add user/password-related methods
@@ -163,19 +181,19 @@ class NodeFire {
     }
     /**
      * Creates a new NodeFire object on the same reference, but with an extended interpolation scope.
-     * @param  {Object} scope A dictionary of interpolation variables that will be added to (and take
+     * @param  scope A dictionary of interpolation variables that will be added to (and take
      *     precedence over) the one carried by this NodeFire object.
-     * @return {NodeFire} A new NodeFire object with the same reference and new scope.
+     * @return A new NodeFire object with the same reference and new scope.
      */
     scope(scope) {
-        return new NodeFire(this.$ref, _.assign(_.clone(this.$scope), scope));
+        return new NodeFire(this.$ref, lodash_1.default.assign(lodash_1.default.clone(this.$scope), scope));
     }
     /**
      * Creates a new NodeFire object on a child of this one, and optionally an augmented scope.
-     * @param  {string} path The path to the desired child, relative to this reference.  The path will
+     * @param path The path to the desired child, relative to this reference.  The path will
      *     be interpolated using this object's scope and the additional scope provided.  For the
      *     syntax see the interpolate() method.
-     * @param  {Object} scope Optional additional scope that will add to (and override) this object's
+     * @param scope Optional additional scope that will add to (and override) this object's
      *     scope.
      * @return {NodeFire} A new NodeFire object on the child reference, and with the augmented scope.
      */
@@ -186,12 +204,12 @@ class NodeFire {
     /**
      * Gets this reference's current value from Firebase, and inserts it into the cache if a
      * maxCacheSize was set and the `cache` option is not false.
-     * @param {{timeout?: number?, cache?: boolean?}} options
-     * @return {Promise} A promise that is resolved to the reference's value, or rejected with an
+     * @param options
+     * @return A promise that is resolved to the reference's value, or rejected with an
      *     error.  The value returned is normalized, meaning arrays are converted to objects.
      */
     get(options) {
-        return invoke({ ref: this, method: 'get', args: [] }, options, opts => {
+        return invoke({ ref: this, method: 'get', args: [] }, options, (opts) => {
             if (opts.cache === undefined || opts.cache)
                 this.cache();
             return this.$ref.once('value').then(snap => getNormalValue(snap));
@@ -231,13 +249,13 @@ class NodeFire {
     }
     /**
      * Sets the value at this reference.
-     * @param {Object || number || string || boolean} value The value to set.
-     * @param {{timeout?: number?}=} options
+     * @param value The value to set.
+     * @param options
      * @returns {Promise<void>} A promise that is resolved when the value has been set,
      * or rejected with an error.
      */
     set(value, options) {
-        return invoke({ ref: this, method: 'set', args: [value] }, options, opts => this.$ref.set(value));
+        return invoke({ ref: this, method: 'set', args: [value] }, options, (opts) => this.$ref.set(value));
     }
     /**
      * Updates a value at this reference, setting only the top-level keys supplied and leaving any
@@ -248,7 +266,7 @@ class NodeFire {
      * or rejected with an error.
      */
     update(value, options) {
-        return invoke({ ref: this, method: 'update', args: [value] }, options, opts => this.$ref.update(value));
+        return invoke({ ref: this, method: 'update', args: [value] }, options, (opts) => this.$ref.update(value));
     }
     /**
      * Removes this reference from the Firebase.
@@ -256,20 +274,20 @@ class NodeFire {
      *     an error.
      */
     remove(options) {
-        return invoke({ ref: this, method: 'remove', args: [] }, options, opts => this.$ref.remove());
+        return invoke({ ref: this, method: 'remove', args: [] }, options, (opts) => this.$ref.remove());
     }
     /**
      * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
      * want to generate a new unique key you can call newKey() directly.
-     * @param  {Object || number || string || boolean} value The value to push.
-     * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
+     * @param value The value to push.
+     * @return A promise that is resolved to a new NodeFire object that refers to the newly
      *     pushed value (with the same scope as this object), or rejected with an error.
      */
     push(value, options) {
         if (value === undefined || value === null) {
             return new NodeFire(this.$ref.push(), this.$scope);
         }
-        return invoke({ ref: this, method: 'push', args: [value] }, options, opts => {
+        return invoke({ ref: this, method: 'push', args: [value] }, options, (opts) => {
             const ref = this.$ref.push(value);
             return ref.then(() => new NodeFire(ref, this.$scope));
         });
@@ -283,11 +301,11 @@ class NodeFire {
      * option then an error with the message 'stuck' will be thrown earlier so that you can try to
      * work around the issue.
      *
-     * @param  {function(value):value} updateFunction A function that takes the current value at this
+     * @param  updateFunction A function that takes the current value at this
      *     reference and returns the new value to replace it with.  Return undefined to abort the
      *     transaction, and null to remove the reference.  Be prepared for this function to be called
      *     multiple times in case of contention.
-     * @param  {{detectStuck?: boolean?, prefetchValue?: boolean?, timeout?: number?}} options An
+     * @param  options An
      * options objects that may include the following properties:
      *     {number} detectStuck Throw a 'stuck' exception after the update function's input value has
      *         remained unchanged this many times.  Defaults to 0 (turned off).
@@ -319,11 +337,11 @@ class NodeFire {
             }
         }
         const op = { ref: this, method: 'transaction', args: [updateFunction] };
-        return Promise.all(_.map(operationInterceptors, interceptor => Promise.resolve(interceptor(op, options)))).then(() => {
+        return Promise.all(lodash_1.default.map(operationInterceptors, (interceptor) => Promise.resolve(interceptor(op, options)))).then(() => {
             const promise = new Promise((resolve, reject) => {
                 const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
                 let wrappedReject = wrappedRejectNoResult;
-                let aborted, settled;
+                let aborted = false, settled = false;
                 const inputValues = [];
                 let numConsecutiveEqualInputValues = 0;
                 function wrappedUpdateFunction(value) {
@@ -332,12 +350,12 @@ class NodeFire {
                         if (aborted)
                             return; // transaction otherwise aborted and promise settled, just stop
                         if (options.detectStuck) {
-                            if (inputValues.length && _.isEqual(value, _.last(inputValues))) {
+                            if (inputValues.length && lodash_1.default.isEqual(value, lodash_1.default.last(inputValues))) {
                                 numConsecutiveEqualInputValues++;
                             }
                             else {
                                 numConsecutiveEqualInputValues = 0;
-                                inputValues.push(_.cloneDeep(value));
+                                inputValues.push(lodash_1.default.cloneDeep(value));
                             }
                             if (numConsecutiveEqualInputValues >= options.detectStuck) {
                                 const error = new Error('stuck');
@@ -398,7 +416,7 @@ class NodeFire {
                     }
                 }
                 if (options.timeout) {
-                    timeout = timers.setTimeout(() => {
+                    timeout: timers.Timeout = timers.setTimeout(() => {
                         if (settled)
                             return;
                         aborted = true;
@@ -413,7 +431,7 @@ class NodeFire {
                     // data from the server.  Also pull it into the cache to speed future transactions at this
                     // ref.
                     self.cache();
-                    onceTxn = _.once(txn);
+                    onceTxn = lodash_1.default.once(txn);
                     self.$ref.on('value', onceTxn, wrappedRejectNoResult);
                 }
                 else {
@@ -431,9 +449,9 @@ class NodeFire {
      *   2) The ref() method will return a NodeFire reference, with the same scope as the reference
      *      on which on() was called.
      *   3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
-     * @param {(Snapshot) => Snapshot} callback
-     * @param {() => void} cancelCallback
-     * @param {any} context
+     * @param callback
+     * @param cancelCallback
+     * @param context
      */
     on(eventType, callback, cancelCallback, context) {
         cancelCallback = wrapReject(this, 'on', cancelCallback);
@@ -464,7 +482,7 @@ class NodeFire {
      * Fetches the keys of the current reference's children without also fetching all the contents,
      * using the Firebase REST API.
      *
-     * @param {{maxTries?: number?, retryInterval?: number?, agent?: http.Agent?}=} options An options
+     * @param options An options
      * object with the following items, all optional:
      *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient errors
      *               (defaults to 1)
@@ -474,8 +492,8 @@ class NodeFire {
      */
     childrenKeys(options) {
         return this.$ref.childrenKeys ?
-            this.$ref.childrenKeys(...arguments) :
-            firebaseChildrenKeys(this.$ref, ...arguments);
+            this.$ref.childrenKeys(options) :
+            firebase_childrenkeys_1.default(this.$ref, options);
     }
     /**
      * Turns Firebase low-level connection logging on or off.
@@ -510,7 +528,7 @@ class NodeFire {
     /**
      * Adds an intercepting callback before all NodeFire database operations.  This callback can
      * modify the operation's options or block it while performing other work.
-     * @param {interceptOperationsCallback} callback
+     * @param callback
      *     The callback to invoke before each operation.  It will be passed two
      *     arguments: an operation descriptor ({ref, method, args}) and an options object.  The
      *     descriptor is read-only but the options can be modified.  The callback can return any value
@@ -531,7 +549,7 @@ class NodeFire {
                 cache.max = max;
             }
             else {
-                cache = new LRUCache({ max, dispose(key, ref) {
+                cache = new lru_cache_1.default({ max, dispose(key, ref) {
                         ref.$ref.off('value', noopCallback);
                     } });
             }
@@ -583,7 +601,7 @@ class NodeFire {
     static escape(key) {
         // eslint-disable-next-line no-control-regex
         return key.toString().replace(/[\x00-\x1f\\.$#[\]\x7f/]/g, char => {
-            return '\\' + _.padStart(char.charCodeAt(0).toString(16), 2, '0');
+            return '\\' + lodash_1.default.padStart(char.charCodeAt(0).toString(16), 2, '0');
         });
     }
     /**
@@ -598,17 +616,9 @@ class NodeFire {
     }
 }
 exports.default = NodeFire;
-/**
- * This callback type is called `requestCallback` and is displayed as a global symbol.
- *
- * @callback interceptOperationsCallback
- * @param {{ref: NodeFire, method: string, args: any[]}} op
- * @param {any} options
- * @return {Promise<void> | void}
- */
+// jshint latedef:nofunc
 /**
  * Flag that indicates whether to log transactions and the number of tries needed.
- * @type {boolean} True to log metadata about every transaction.
  */
 NodeFire.LOG_TRANSACTIONS = false;
 /* Query methods, same as on Firebase objects. */
@@ -718,7 +728,7 @@ function trackTimeOffset(ref, recover = false) {
     }
     ref.root.child('.info/serverTimeOffset').on('value', snap => {
         serverTimeOffsets[appName] = snap.val();
-    }, _.bind(trackTimeOffset, ref, true));
+    }, lodash_1.default.bind(trackTimeOffset, ref, true));
 }
 function trackDisconnect(ref, recover = false) {
     const appName = ref.database.app.name;
@@ -728,7 +738,7 @@ function trackDisconnect(ref, recover = false) {
     ref.root.child('.info/connected').on('value', snap => {
         if (!snap.val())
             trimCache(ref);
-    }, _.bind(trackDisconnect, ref, true));
+    }, lodash_1.default.bind(trackDisconnect, ref, true));
 }
 function trimCache(ref) {
     if (!cache || cache.max <= maxCacheSizeForDisconnectedApp)
@@ -747,29 +757,29 @@ function getNormalValue(snap) {
     return getNormalRawValue(snap.val());
 }
 function getNormalRawValue(value) {
-    if (_.isArray(value)) {
+    if (lodash_1.default.isArray(value)) {
         const normalValue = {};
-        _.forEach(value, (item, key) => {
-            if (!_.isNil(item)) {
+        lodash_1.default.forEach(value, (item, key) => {
+            if (!lodash_1.default.isNil(item)) {
                 normalValue[key] = getNormalRawValue(item);
             }
         });
         value = normalValue;
     }
-    else if (_.isObject(value)) {
-        _.forEach(value, (item, key) => {
+    else if (lodash_1.default.isObject(value)) {
+        lodash_1.default.forEach(value, (item, key) => {
             value[key] = getNormalRawValue(item);
         });
     }
     return value;
 }
 function invoke(op, options = {}, fn) {
-    return Promise.all(_.map(operationInterceptors, interceptor => Promise.resolve(interceptor(op, options)))).then(() => {
+    return Promise.all(lodash_1.default.map(operationInterceptors, interceptor => Promise.resolve(interceptor(op, options)))).then(() => {
         const promises = [];
         let timeout, settled;
         if (options.timeout) {
             promises.push(new Promise((resolve, reject) => {
-                timeout = timers.setTimeout(() => {
+                timeout: timers.Timer = timers.setTimeout(() => {
                     if (!settled)
                         reject(new Error('timeout'));
                 }, options.timeout);
@@ -792,7 +802,7 @@ function invoke(op, options = {}, fn) {
     });
 }
 function handleError(error, op, callback) {
-    let args = _.map(op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
+    let args = lodash_1.default.map(op.args, arg => lodash_1.default.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
     const argsString = JSON.stringify(args);
     if (argsString.length > 500)
         args = argsString.slice(0, 500) + '...';
