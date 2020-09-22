@@ -34,7 +34,7 @@ export type InterceptOperationsCallback = (
   options: any
 ) => Promise<void> | void
 
-type Value = object | number | string | boolean
+type Value = any
 
 /**
  * A wrapper around a Firebase Admin reference, and the main entry point to the module.  You can
@@ -63,7 +63,7 @@ export default class NodeFire {
    * @param ref A fully authenticated Firebase Admin reference or query.
    * @param scope Optional dictionary that will be used for interpolating paths.
    */
-  constructor(ref: Reference, scope: Scope) {
+  constructor(ref: Reference, scope: Scope={}) {
     const refIsNonNullObject = typeof ref === 'object' && ref !== null;
     if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
         typeof ref.ref.transaction !== 'function') {
@@ -74,7 +74,6 @@ export default class NodeFire {
     }
 
     this.$ref = ref;
-    this.$scope = scope || {};
     this._path = undefined;  // initialized lazily
 
     trackTimeOffset(this);
@@ -224,7 +223,7 @@ export default class NodeFire {
    *     scope.
    * @return {NodeFire} A new NodeFire object on the child reference, and with the augmented scope.
    */
-  child(path: string, scope: Scope): NodeFire {
+  child(path: string, scope?: Scope): NodeFire {
     const child = this.scope(scope);
     return new NodeFire(this.$ref.child(child.interpolate(path)), child.$scope);
   }
@@ -236,7 +235,7 @@ export default class NodeFire {
    * @return A promise that is resolved to the reference's value, or rejected with an
    *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
-  get(options: {timeout?: number, cache?: boolean}): Promise<Value> {
+  get(options?: {timeout?: number, cache?: boolean}): Promise<Value> {
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       (opts: {cache?: boolean}) => {
@@ -282,7 +281,7 @@ export default class NodeFire {
    * @returns {Promise<void>} A promise that is resolved when the value has been set,
    * or rejected with an error.
    */
-  set(value: Value, options: {timeout?: number}): Promise<void> {
+  set(value: Value, options?: {timeout?: number}): Promise<void> {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
       (opts: any) => this.$ref.set(value)
@@ -297,7 +296,7 @@ export default class NodeFire {
    * @return {Promise<void>} A promise that is resolved when the value has been updated,
    * or rejected with an error.
    */
-  update(value: any, options: {timeout?: number}): Promise<void> {
+  update(value: any, options?: {timeout?: number}): Promise<void> {
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
       (opts: any) => this.$ref.update(value)
@@ -309,7 +308,7 @@ export default class NodeFire {
    * @return {Promise} A promise that is resolved when the value has been removed, or rejected with
    *     an error.
    */
-  remove(options: {timeout?: number}): Promise<any> {
+  remove(options?: {timeout?: number}): Promise<any> {
     return invoke(
       {ref: this, method: 'remove', args: []}, options,
       (opts: any) => this.$ref.remove()
@@ -323,9 +322,9 @@ export default class NodeFire {
    * @return A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
-  push(value: Value, options: { timeout?: number }): Promise<NodeFire> | NodeFire {
+  push(value: Value, options?: { timeout?: number }): Promise<NodeFire> {
     if (value === undefined || value === null) {
-      return new NodeFire(this.$ref.push(), this.$scope);
+      return Promise.resolve(new NodeFire(this.$ref.push(), this.$scope));
     }
     return invoke({ref: this, method: 'push', args: [value]}, options, (opts: any) => {
       const ref = this.$ref.push(value);
@@ -359,10 +358,10 @@ export default class NodeFire {
    */
   transaction(
     updateFunction: (Value) => Value,
-    options: {detectStuck?: number,
+    options?: {detectStuck?: number,
     prefetchValue?: boolean,
     timeout?: number
-  }): Promise<void> {
+  }): Promise<Value> {
     const self = this;  // easier than using => functions or binding explicitly
     let tries = 0, result: any;
     const startTime = self.now;
@@ -505,7 +504,7 @@ export default class NodeFire {
   on(
     eventType: admin.database.EventType,
     callback: (a: admin.database.DataSnapshot, b?: string) => any,
-    cancelCallback: ((a: Error) => any), context: object
+    cancelCallback?: ((a: Error) => any), context?: object
   ): (a: admin.database.DataSnapshot, b?: string) => any {
     cancelCallback = wrapReject(this, 'on', cancelCallback);
     this.$ref.on(
@@ -688,15 +687,27 @@ export default class NodeFire {
     });
   }
 
+  orderByChild(path: string): NodeFire {
+    return new NodeFire(
+      this.$ref.orderByChild.apply(this.$ref, arguments), this.$scope);
+  };
+
+  equalTo(value: Value): NodeFire {
+    return new NodeFire(
+      this.$ref.equalTo.apply(this.$ref, arguments), this.$scope);
+  };
 }
 
 /* Query methods, same as on Firebase objects. */
+  // NodeFire.prototype[method] = function () {
+  //   return new NodeFire(
+  //     this.$ref[method].apply(this.$ref, arguments), this.$scope);
+  // };
 wrapNodeFire('limitToFirst');
 wrapNodeFire('limitToLast');
 wrapNodeFire('startAt');
 wrapNodeFire('endAt');
 wrapNodeFire('equalTo');
-wrapNodeFire('orderByChild');
 wrapNodeFire('orderByKey');
 wrapNodeFire('orderByValue');
 
