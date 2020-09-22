@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "3.0.2",
+  "version": "3.1.0",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "built/index.js",
   "types": "built/index.d.ts",
@@ -8,8 +8,9 @@
     "node": ">=8.0"
   },
   "scripts": {
-    "test": "node tests/runner.js",
-    "build": "tsc"
+    "test": "node src/tests/runner.js",
+    "build": "tsc",
+    "prepublish": "tsc"
   },
   "repository": {
     "type": "git",
