@@ -20,8 +20,12 @@ export interface NodeFireError extends Error {
 }
 
 export interface Reference extends admin.database.Reference {
+  // Added to admin.database.Reference by firebaseChildrenKeys
   childrenKeys?: Function;
+
+  // Not documented in firebase-admin, so typescript thinks it's not there (but it is).
   database?: admin.database.Database;
+
   ref: Reference;
 }
 
