@@ -1,5 +1,5 @@
 import {default as admin} from 'firebase-admin';
-import * as timers from 'safe-timers';
+import {setTimeout, Timout} from 'safe-timers';
 import _ from 'lodash';
 import {default as LRUCache} from 'lru-cache';
 import {default as firebaseChildrenKeys} from 'firebase-childrenkeys';
@@ -63,7 +63,7 @@ export default class NodeFire {
    * @param ref A fully authenticated Firebase Admin reference or query.
    * @param scope Optional dictionary that will be used for interpolating paths.
    */
-  constructor(ref: Reference, scope: Scope={}) {
+  constructor(ref: Reference, scope?: Scope) {
     const refIsNonNullObject = typeof ref === 'object' && ref !== null;
     if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
         typeof ref.ref.transaction !== 'function') {
@@ -72,7 +72,7 @@ export default class NodeFire {
         but got "${ref}".`
       );
     }
-
+    this.$scope = scope || {}
     this.$ref = ref;
     this._path = undefined;  // initialized lazily
 
@@ -432,7 +432,7 @@ export default class NodeFire {
           }
         }
 
-        let onceTxn, timeout: timers.Timer;
+        let onceTxn, timeout: Timout;
         function txn() {
           if (!prefetchDoneTime) prefetchDoneTime = self.now;
           try {
@@ -464,7 +464,7 @@ export default class NodeFire {
           }
         }
         if (options.timeout) {
-          timeout: timers.Timeout = timers.setTimeout(() => {
+          timeout = setTimeout(() => {
             if (settled) return;
             aborted = true;
             const e: NodeFireError = new Error('timeout');
@@ -910,10 +910,10 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
     )
   ).then(() => {
     const promises = [];
-    let timeout: timers.Timer, settled;
+    let timeout: Timout, settled;
     if (options.timeout) {
       promises.push(new Promise((resolve, reject) => {
-        timeout: timers.Timer = timers.setTimeout(() => {
+        timeout = setTimeout(() => {
           if (!settled) reject(new Error('timeout'));
         }, options.timeout);
       }));
