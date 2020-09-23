@@ -696,20 +696,37 @@ export default class NodeFire {
     return new NodeFire(
       this.$ref.equalTo.apply(this.$ref, arguments), this.$scope);
   };
-}
 
-/* Query methods, same as on Firebase objects. */
-  // NodeFire.prototype[method] = function () {
-  //   return new NodeFire(
-  //     this.$ref[method].apply(this.$ref, arguments), this.$scope);
-  // };
-wrapNodeFire('limitToFirst');
-wrapNodeFire('limitToLast');
-wrapNodeFire('startAt');
-wrapNodeFire('endAt');
-wrapNodeFire('equalTo');
-wrapNodeFire('orderByKey');
-wrapNodeFire('orderByValue');
+  limitToFirst(limit: Number): NodeFire {
+    return new NodeFire(
+      this.$ref.limitToFirst.apply(this.$ref, arguments), this.$scope);
+  };
+
+  limitToLast(limit: Number): NodeFire {
+    return new NodeFire(
+      this.$ref.limitToLast.apply(this.$ref, arguments), this.$scope);
+  };
+
+  startAt(value?: string | number | boolean, key?: string): NodeFire {
+    return new NodeFire(
+      this.$ref.startAt.apply(this.$ref, arguments), this.$scope);
+  };
+
+  endAt(value?: string | number | boolean, key?: string): NodeFire {
+    return new NodeFire(
+      this.$ref.endAt.apply(this.$ref, arguments), this.$scope);
+  };
+
+  orderByKey(): NodeFire {
+    return new NodeFire(
+      this.$ref.orderByKey.apply(this.$ref, arguments), this.$scope);
+  };
+
+  orderByValue(): NodeFire {
+    return new NodeFire(
+      this.$ref.orderByValue.apply(this.$ref, arguments), this.$scope);
+  };
+}
 
 
 /**
