@@ -1,10 +1,10 @@
-import {default as admin} from 'firebase-admin';
+import admin from 'firebase-admin';
 import {setTimeout, Timout} from 'safe-timers';
 import _ from 'lodash';
-import {default as LRUCache} from 'lru-cache';
-import {default as firebaseChildrenKeys} from 'firebase-childrenkeys';
-import * as firefight from 'firefight';
-import * as http from 'http';
+import LRUCache from 'lru-cache';
+import firebaseChildrenKeys from 'firebase-childrenkeys';
+import {Simulator} from 'firefight';
+import {Agent} from 'http';
 
 let cache: any, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
@@ -552,9 +552,7 @@ export default class NodeFire {
    * @return {Promise<string[]>} A promise that resolves to an array of key strings.
    */
   childrenKeys(options: {
-    maxTries?: number,
-    retryInterval?: number,
-    agent?: http.Agent
+    maxTries?: number, retryInterval?: number, agent?: Agent
   }): Promise<string[]> {
     return this.$ref.childrenKeys ?
       this.$ref.childrenKeys(options) :
@@ -586,7 +584,7 @@ export default class NodeFire {
             'You must initialize your database with a databaseAuthVariableOverride that includes ' +
             'a uid');
         }
-        simulators[this.database.app.name] = new firefight.Simulator(this.database, legacySecret);
+        simulators[this.database.app.name] = new Simulator(this.database, legacySecret);
       }
     } else {
       delete simulators[this.database.app.name];
