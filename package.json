@@ -31,7 +31,7 @@
   },
   "homepage": "https://github.com/pkaminski/nodefire",
   "dependencies": {
-    "firebase-admin": "^9.8.0",
+    "firebase-admin": "9.3.0",
     "firebase-childrenkeys": "2.3.3",
     "firefight": "1.x",
     "lodash": "4.17.21",

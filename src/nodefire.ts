@@ -580,8 +580,7 @@ export default class NodeFire {
   enablePermissionDebugging(legacySecret: string): void {
     if (legacySecret) {
       if (!simulators[this.database.app.name]) {
-        const authOverride =
-          (this.database.app.options as admin.AppOptions).databaseAuthVariableOverride;
+        const authOverride = this.database.app.options.databaseAuthVariableOverride;
         if (!authOverride || !(authOverride as any).uid) {
           throw new Error(
             'You must initialize your database with a databaseAuthVariableOverride that includes ' +
@@ -955,8 +954,7 @@ function handleError(error, op, callback) {
   const simulator = simulators[op.ref.database.app.name];
   if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
   const method = op.method === 'get' ? 'once' : op.method;
-  const authOverride =
-    ((op.ref as Reference).database.app.options as admin.AppOptions).databaseAuthVariableOverride;
+  const authOverride = (op.ref as Reference).database.app.options.databaseAuthVariableOverride;
   return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
     error.firebase.permissionTrace = explanation;
     return callback(error);
