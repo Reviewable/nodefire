@@ -358,10 +358,12 @@ export default class NodeFire {
    */
   transaction(
     updateFunction: (Value) => Value,
-    options?: {detectStuck?: number,
-    prefetchValue?: boolean,
-    timeout?: number
-  }): Promise<Value> {
+    options?: {
+      detectStuck?: number,
+      prefetchValue?: boolean,
+      timeout?: number
+    }
+  ): Promise<Value> {
     const self = this;  // easier than using => functions or binding explicitly
     let tries = 0, result: any;
     const startTime = self.now;
@@ -578,7 +580,7 @@ export default class NodeFire {
   enablePermissionDebugging(legacySecret: string): void {
     if (legacySecret) {
       if (!simulators[this.database.app.name]) {
-        const authOverride = this.database.app.options.databaseAuthVariableOverride;
+        const authOverride = (this.database.app.options as any).databaseAuthVariableOverride;
         if (!authOverride || !(authOverride as any).uid) {
           throw new Error(
             'You must initialize your database with a databaseAuthVariableOverride that includes ' +
@@ -952,7 +954,7 @@ function handleError(error, op, callback) {
   const simulator = simulators[op.ref.database.app.name];
   if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
   const method = op.method === 'get' ? 'once' : op.method;
-  const authOverride = (op.ref as Reference).database.app.options.databaseAuthVariableOverride;
+  const authOverride = ((op.ref as Reference).database.app.options as any).databaseAuthVariableOverride;
   return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
     error.firebase.permissionTrace = explanation;
     return callback(error);
