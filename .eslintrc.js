@@ -4,9 +4,15 @@ module.exports = {
     es6: true
   },
   parserOptions: {
-    ecmaVersion: 2018
+    ecmaVersion: 2018,
+    sourceType: 'module'
   },
-  extends: ['eslint:recommended'],
+  plugins: ['@typescript-eslint'],
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/eslint-recommended',
+    'plugin:@typescript-eslint/recommended',
+  ],
   rules: {
     'accessor-pairs': 'error',
     'array-bracket-spacing': 'warn',
@@ -33,7 +39,7 @@ module.exports = {
     'key-spacing': ['warn', {mode: 'minimum'}],
     'keyword-spacing': 'warn',
     'linebreak-style': 'warn',
-    'lines-between-class-members': 'warn',
+    'lines-between-class-members': ['warn', 'always', {exceptAfterSingleLine: true}],
     'max-len': ['warn', {code: 100, ignoreUrls: true, ignoreRegExpLiterals: true}],
     'new-cap': 'error',
     'new-parens': 'error',
@@ -85,8 +91,6 @@ module.exports = {
     'no-unmodified-loop-condition': 'error',
     'no-unneeded-ternary': 'error',
     'no-unused-expressions': 'error',
-    'no-unused-vars': ['error', {args: 'none'}],
-    'no-use-before-define': ['error', {functions: false}],
     'no-useless-call': 'error',
     'no-useless-computed-key': 'error',
     'no-useless-concat': 'error',
@@ -122,5 +126,18 @@ module.exports = {
     'template-tag-spacing': 'warn',
     'unicode-bom': 'error',
     'yoda': 'error',
+
+    // These rules need to work together for correct typescript linting.
+    'no-unused-vars': 'off',
+    '@typescript-eslint/no-unused-vars': ['error', {args: 'none', varsIgnorePattern: '^unused'}],
+    'no-use-before-define': 'off',
+    '@typescript-eslint/no-use-before-define':
+      ['error', {functions: false, ignoreTypeReferences: true}],
+
+    // Rules turned off for now
+    '@typescript-eslint/explicit-module-boundary-types': 'off',
+    '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-var-requires': 'off',
+    '@typescript-eslint/no-non-null-assertion': 'off',
   }
 };

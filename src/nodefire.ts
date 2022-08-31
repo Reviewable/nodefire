@@ -6,6 +6,13 @@ import firebaseChildrenKeys from 'firebase-childrenkeys';
 import {Simulator} from 'firefight';
 import {Agent} from 'http';
 
+export type InterceptOperationsCallback = (
+  op: {ref: NodeFire, method: string, args: any[]},
+  options: any
+) => Promise<void> | void;
+
+type Value = any;
+
 let cache: any, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors: InterceptOperationsCallback[] = [];
@@ -19,22 +26,19 @@ export interface NodeFireError extends Error {
   timeout?: number;
 }
 
-export interface Reference extends admin.database.Reference {
-  // Added to admin.database.Reference by firebaseChildrenKeys
-  childrenKeys?: Function;
+declare module 'firebase-admin' {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace database {
+    interface Reference {
+      // Added to admin.database.Reference by firebaseChildrenKeys
+      childrenKeys?: (options: any) => Promise<string[]>;
 
-  // Not documented in firebase-admin, so typescript thinks it's not there (but it is).
-  database?: admin.database.Database;
-
-  ref: Reference;
+      // Not documented in firebase-admin, so TypeScript thinks it's not there (but it is).
+      database?: admin.database.Database;
+    }
+  }
 }
 
-export type InterceptOperationsCallback = (
-  op: { ref: NodeFire, method: string, args: any[] },
-  options: any
-) => Promise<void> | void
-
-type Value = any
 
 /**
  * A wrapper around a Firebase Admin reference, and the main entry point to the module.  You can
@@ -47,13 +51,11 @@ type Value = any
  * milliseconds.  Other operation-specific options are described in their respective doc comments.
  */
 export default class NodeFire {
-// jshint latedef:nofunc
-
   /**
    * Flag that indicates whether to log transactions and the number of tries needed.
    */
-  static LOG_TRANSACTIONS: boolean = false;
-  $ref: Reference;
+  static LOG_TRANSACTIONS = false;
+  $ref: admin.database.Reference | admin.database.Query;
   $scope: Scope;
   private _path?: string;
 
@@ -63,7 +65,7 @@ export default class NodeFire {
    * @param ref A fully authenticated Firebase Admin reference or query.
    * @param scope Optional dictionary that will be used for interpolating paths.
    */
-  constructor(ref: Reference, scope?: Scope) {
+  constructor(ref: admin.database.Reference | admin.database.Query, scope?: Scope) {
     const refIsNonNullObject = typeof ref === 'object' && ref !== null;
     if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
         typeof ref.ref.transaction !== 'function') {
@@ -72,7 +74,7 @@ export default class NodeFire {
         but got "${ref}".`
       );
     }
-    this.$scope = scope || {}
+    this.$scope = scope || {};
     this.$ref = ref;
     this._path = undefined;  // initialized lazily
 
@@ -225,7 +227,7 @@ export default class NodeFire {
    */
   child(path: string, scope?: Scope): NodeFire {
     const child = this.scope(scope);
-    return new NodeFire(this.$ref.child(child.interpolate(path)), child.$scope);
+    return new NodeFire(this.$ref.ref.child(child.interpolate(path)), child.$scope);
   }
 
   /**
@@ -284,7 +286,7 @@ export default class NodeFire {
   set(value: Value, options?: {timeout?: number}): Promise<void> {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
-      (opts: any) => this.$ref.set(value)
+      (opts: any) => this.$ref.ref.set(value)
     );
   }
 
@@ -299,7 +301,7 @@ export default class NodeFire {
   update(value: any, options?: {timeout?: number}): Promise<void> {
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
-      (opts: any) => this.$ref.update(value)
+      (opts: any) => this.$ref.ref.update(value)
     );
   }
 
@@ -311,7 +313,7 @@ export default class NodeFire {
   remove(options?: {timeout?: number}): Promise<any> {
     return invoke(
       {ref: this, method: 'remove', args: []}, options,
-      (opts: any) => this.$ref.remove()
+      (opts: any) => this.$ref.ref.remove()
     );
   }
 
@@ -324,10 +326,10 @@ export default class NodeFire {
    */
   push(value: Value, options?: { timeout?: number }): Promise<NodeFire> {
     if (value === undefined || value === null) {
-      return Promise.resolve(new NodeFire(this.$ref.push(), this.$scope));
+      return Promise.resolve(new NodeFire(this.$ref.ref.push(), this.$scope));
     }
     return invoke({ref: this, method: 'push', args: [value]}, options, (opts: any) => {
-      const ref = this.$ref.push(value);
+      const ref = this.$ref.ref.push(value);
       return ref.then(() => new NodeFire(ref, this.$scope));
     });
   }
@@ -357,13 +359,14 @@ export default class NodeFire {
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
   transaction(
-    updateFunction: (Value) => Value,
+    updateFunction: (value: Value) => Value,
     options?: {
       detectStuck?: number,
       prefetchValue?: boolean,
       timeout?: number
     }
   ): Promise<Value> {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;  // easier than using => functions or binding explicitly
     let tries = 0, result: any;
     const startTime = self.now;
@@ -438,7 +441,7 @@ export default class NodeFire {
         function txn() {
           if (!prefetchDoneTime) prefetchDoneTime = self.now;
           try {
-            self.$ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
+            self.$ref.ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
               if (error && (error.message === 'set' || error.message === 'disconnect')) {
                 txn();
                 return;
@@ -530,7 +533,7 @@ export default class NodeFire {
    * @return {string} A unique string that satisfies Firebase's key syntax constraints.
    */
   newKey(): string {
-    return this.$ref.push().key;
+    return this.$ref.ref.push().key;
   }
 
   /**
@@ -556,8 +559,8 @@ export default class NodeFire {
   childrenKeys(options: {
     maxTries?: number, retryInterval?: number, agent?: Agent
   }): Promise<string[]> {
-    return this.$ref.childrenKeys ?
-      this.$ref.childrenKeys(options) :
+    return this.$ref.ref.childrenKeys ?
+      this.$ref.ref.childrenKeys(options) :
       firebaseChildrenKeys(this.$ref, options);
   }
 
@@ -688,44 +691,36 @@ export default class NodeFire {
   }
 
   orderByChild(path: string): NodeFire {
-    return new NodeFire(
-      this.$ref.orderByChild.apply(this.$ref, arguments), this.$scope);
-  };
+    return new NodeFire(this.$ref.orderByChild(path), this.$scope);
+  }
 
   equalTo(value: Value): NodeFire {
-    return new NodeFire(
-      this.$ref.equalTo.apply(this.$ref, arguments), this.$scope);
-  };
+    return new NodeFire(this.$ref.equalTo(value), this.$scope);
+  }
 
-  limitToFirst(limit: Number): NodeFire {
-    return new NodeFire(
-      this.$ref.limitToFirst.apply(this.$ref, arguments), this.$scope);
-  };
+  limitToFirst(limit: number): NodeFire {
+    return new NodeFire(this.$ref.limitToFirst(limit), this.$scope);
+  }
 
-  limitToLast(limit: Number): NodeFire {
-    return new NodeFire(
-      this.$ref.limitToLast.apply(this.$ref, arguments), this.$scope);
-  };
+  limitToLast(limit: number): NodeFire {
+    return new NodeFire(this.$ref.limitToLast(limit), this.$scope);
+  }
 
   startAt(value?: string | number | boolean, key?: string): NodeFire {
-    return new NodeFire(
-      this.$ref.startAt.apply(this.$ref, arguments), this.$scope);
-  };
+    return new NodeFire(this.$ref.startAt(value, key), this.$scope);
+  }
 
   endAt(value?: string | number | boolean, key?: string): NodeFire {
-    return new NodeFire(
-      this.$ref.endAt.apply(this.$ref, arguments), this.$scope);
-  };
+    return new NodeFire(this.$ref.endAt(value, key), this.$scope);
+  }
 
   orderByKey(): NodeFire {
-    return new NodeFire(
-      this.$ref.orderByKey.apply(this.$ref, arguments), this.$scope);
-  };
+    return new NodeFire(this.$ref.orderByKey(), this.$scope);
+  }
 
   orderByValue(): NodeFire {
-    return new NodeFire(
-      this.$ref.orderByValue.apply(this.$ref, arguments), this.$scope);
-  };
+    return new NodeFire(this.$ref.orderByValue(), this.$scope);
+  }
 }
 
 
@@ -759,7 +754,7 @@ export class Snapshot {
     return new Snapshot(this.$snap.child(childNodeFire.interpolate(path)), childNodeFire);
   }
 
-  forEach(callback: (Snapshot) => any): any {
+  forEach(callback: (snapshot: Snapshot) => any): any {
     this.$snap.forEach(child => {
       return callback(new Snapshot(child, this.$nodeFire));
     });
@@ -806,7 +801,9 @@ function captureCallback(
   return nodeFireCallback;
 }
 
-function popCallback(nodeFire: NodeFire, eventType: admin.database.EventType, callback: CapturableCallback): NodeFireCallback {
+function popCallback(
+  nodeFire: NodeFire, eventType: admin.database.EventType, callback: CapturableCallback
+): NodeFireCallback {
   const key = eventType + '::' + nodeFire.toString();
   return callback.$nodeFireCallbacks[key].pop();
 }
@@ -815,24 +812,18 @@ function runGenerator(o) {
   let promise;
   if (o instanceof Promise) {
     promise = o;
-  } else if (o && typeof o.next === 'function' && typeof o.throw === 'function' && (Promise as any).co) {
+  } else if (
+    o && typeof o.next === 'function' && typeof o.throw === 'function' && (Promise as any).co
+  ) {
     promise = (Promise as any).co(o);
   }
   if (promise) promise.catch(error => {throw error;});
 }
 
 
-function wrapNodeFire(method) {
-  NodeFire.prototype[method] = function() {
-    return new NodeFire(
-      this.$ref[method].apply(this.$ref, arguments), this.$scope);
-  };
-}
-
-
 function delegateSnapshot(method) {
-  Snapshot.prototype[method] = function() {
-    return this.$snap[method].apply(this.$snap, arguments);
+  Snapshot.prototype[method] = function(...args) {
+    return this.$snap[method](...args);
   };
 }
 
@@ -850,7 +841,7 @@ function wrapReject(nodefire: NodeFire, method, value, reject?) {
 
 function noopCallback() {/* empty */}
 
-function trackTimeOffset(ref, recover: boolean = false) {
+function trackTimeOffset(ref, recover = false) {
   const appName = ref.database.app.name;
   if (!recover) {
     if (appName in serverTimeOffsets) return;
@@ -861,7 +852,7 @@ function trackTimeOffset(ref, recover: boolean = false) {
   }, _.bind(trackTimeOffset, ref, true));
 }
 
-function trackDisconnect(ref, recover: boolean = false) {
+function trackDisconnect(ref, recover = false) {
   const appName = ref.database.app.name;
   if (!recover && serverDisconnects[appName]) return;
   serverDisconnects[appName] = true;
@@ -954,7 +945,8 @@ function handleError(error, op, callback) {
   const simulator = simulators[op.ref.database.app.name];
   if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
   const method = op.method === 'get' ? 'once' : op.method;
-  const authOverride = ((op.ref as Reference).database.app.options as any).databaseAuthVariableOverride;
+  const authOverride =
+    ((op.ref as admin.database.Reference).database.app.options as any).databaseAuthVariableOverride;
   return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
     error.firebase.permissionTrace = explanation;
     return callback(error);
