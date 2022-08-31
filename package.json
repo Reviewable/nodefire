@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "built/index.js",
   "types": "built/index.d.ts",
@@ -13,6 +13,7 @@
   "scripts": {
     "test": "node src/tests/runner.js",
     "update": "yarn upgrade-interactive --latest",
+    "lint": "eslint src/*.ts",
     "build": "tsc",
     "prepublish": "tsc"
   },
@@ -40,6 +41,8 @@
     "safe-timers": "1.x"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.36.1",
+    "@typescript-eslint/parser": "^5.36.1",
     "eslint": "8.22.0",
     "typescript": "^4.7.4"
   }
