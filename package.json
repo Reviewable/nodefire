@@ -34,16 +34,16 @@
   "homepage": "https://github.com/pkaminski/nodefire",
   "dependencies": {
     "firebase-admin": "10.x || 11.x",
-    "firebase-childrenkeys": "2.3.5",
+    "firebase-childrenkeys": "^2.3.5",
     "firefight": "1.x",
-    "lodash": "4.17.21",
+    "lodash": "^4.17.21",
     "lru-cache": "6.x",
     "safe-timers": "1.x"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.36.1",
     "@typescript-eslint/parser": "^5.36.1",
-    "eslint": "8.22.0",
+    "eslint": "^8.22.0",
     "typescript": "^4.7.4"
   }
 }
