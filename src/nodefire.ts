@@ -26,16 +26,13 @@ export interface NodeFireError extends Error {
   timeout?: number;
 }
 
-declare module 'firebase-admin' {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace database {
-    interface Reference {
-      // Added to admin.database.Reference by firebaseChildrenKeys
-      childrenKeys?: (options: any) => Promise<string[]>;
+declare module '@firebase/database-types' {
+  interface Reference {
+    // Added to admin.database.Reference by firebaseChildrenKeys
+    childrenKeys?: (options: any) => Promise<string[]>;
 
-      // Not documented in firebase-admin, so TypeScript thinks it's not there (but it is).
-      database?: admin.database.Database;
-    }
+    // Not documented in firebase-admin, so TypeScript thinks it's not there (but it is).
+    database?: admin.database.Database;
   }
 }
 
