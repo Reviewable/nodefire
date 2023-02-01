@@ -38,7 +38,8 @@
     "firefight": "1.x",
     "lodash": "^4.17.21",
     "lru-cache": "6.x",
-    "safe-timers": "^1.1.0"
+    "safe-timers": "^1.1.0",
+    "promise-timeout": "1.3.0"
   },
   "devDependencies": {
     "@types/lodash": "^4.14.191",
