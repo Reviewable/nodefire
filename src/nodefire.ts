@@ -5,6 +5,7 @@ import LRUCache from 'lru-cache';
 import firebaseChildrenKeys from 'firebase-childrenkeys';
 import {Simulator} from 'firefight';
 import {Agent} from 'http';
+import { timeout, TimeoutError } from 'promise-timeout';
 
 export type InterceptOperationsCallback = (
   op: {ref: NodeFire, method: string, args: any[]},
@@ -897,23 +898,11 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
       interceptor => Promise.resolve(interceptor(op, options))
     )
   ).then(() => {
-    const promises = [];
-    let timeout: Timeout, settled;
+    let promise = fn(options);
     if (options.timeout) {
-      promises.push(new Promise((resolve, reject) => {
-        timeout = setTimeout(() => {
-          if (!settled) reject(new Error('timeout'));
-        }, options.timeout);
-      }));
+      promise = timeout(promise, options.timeout);
     }
-    promises.push(Promise.resolve(fn(options)).then(result => {
-      settled = true;
-      if (timeout) timeout.clear();
-      return result;
-    }));
-    return Promise.race(promises).catch(e => {
-      settled = true;
-      if (timeout) timeout.clear();
+    return promise.catch(e => {
       if (e.message === 'timeout') e.timeout = options.timeout;
       return handleError(e, op, Promise.reject.bind(Promise));
     });
