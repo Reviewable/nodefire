@@ -1,5 +1,5 @@
 import admin from 'firebase-admin';
-import {setTimeout, Timout} from 'safe-timers';
+import {setTimeout, Timeout} from 'safe-timers';
 import _ from 'lodash';
 import LRUCache from 'lru-cache';
 import firebaseChildrenKeys from 'firebase-childrenkeys';
@@ -434,7 +434,7 @@ export default class NodeFire {
           }
         }
 
-        let onceTxn, timeout: Timout;
+        let onceTxn, timeout: Timeout;
         function txn() {
           if (!prefetchDoneTime) prefetchDoneTime = self.now;
           try {
@@ -898,7 +898,7 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
     )
   ).then(() => {
     const promises = [];
-    let timeout: Timout, settled;
+    let timeout: Timeout, settled;
     if (options.timeout) {
       promises.push(new Promise((resolve, reject) => {
         timeout = setTimeout(() => {

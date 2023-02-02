@@ -355,6 +355,11 @@
   resolved "https://registry.yarnpkg.com/@types/range-parser/-/range-parser-1.2.4.tgz#cd667bcfdd025213aafb7ca5915a932590acdcdc"
   integrity sha512-EEhsLsD6UsDM1yFhAvy0Cjr6VwmpMWqFBCb9w07wVugF7w9nfajxLuVmngTIpgS6svCnm6Vaw+MZhoDCKnOfsw==
 
+"@types/safe-timers@^1.1.0":
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/@types/safe-timers/-/safe-timers-1.1.0.tgz#aee9d627847f51b1b2252f4a59764516d514ea67"
+  integrity sha512-FP9Fa5JgVeh+4IG9MF3VfkrFXnrvsKOMZdLvX94h4L5qA4rYz9tZ/onEwyjjvRvG86c8kL6OsLBa3yfEC00zdA==
+
 "@types/semver@^7.3.12":
   version "7.3.13"
   resolved "https://registry.yarnpkg.com/@types/semver/-/semver-7.3.13.tgz#da4bfd73f49bd541d28920ab0e2bf0ee80f71c91"
@@ -1266,11 +1271,7 @@ isexe@^2.0.0:
   resolved "https://registry.yarnpkg.com/isexe/-/isexe-2.0.0.tgz#e8fbf374dc556ff8947a10dcb0572d633f2cfa10"
   integrity sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==
 
-<<<<<<< HEAD
-jose@^2.0.5:
-=======
 jose@^2.0.6:
->>>>>>> 42ef6a9 (Update dependencies and fix types.)
   version "2.0.6"
   resolved "https://registry.yarnpkg.com/jose/-/jose-2.0.6.tgz#894ba19169af339d3911be933f913dd02fc57c7c"
   integrity sha512-FVoPY7SflDodE4lknJmbAHSUjLCzE2H1F6MS0RYKMQ8SR+lNccpMf8R4eqkNYyyUjR5qZReOzZo5C5YiHOCjjg==
@@ -1818,7 +1819,7 @@ safe-buffer@>=5.1.0, safe-buffer@^5.0.1, safe-buffer@~5.2.0:
   resolved "https://registry.yarnpkg.com/safe-buffer/-/safe-buffer-5.2.1.tgz#1eaf9fa9bdb1fdd4ec75f58f9cdb4e6b7827eec6"
   integrity sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==
 
-safe-timers@1.x:
+safe-timers@^1.1.0:
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/safe-timers/-/safe-timers-1.1.0.tgz#c58ae8325db8d3b067322f0a4ef3a0cad67aad83"
   integrity sha512-9aqY+v5eMvmRaluUEtdRThV1EjlSElzO7HuCj0sTW9xvp++8iJ9t/RWGNWV6/WHcUJLHpyT2SNf/apoKTU2EpA==
