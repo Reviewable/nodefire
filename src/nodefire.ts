@@ -171,7 +171,7 @@ export default class NodeFire {
             `Missing or null variable "${v}" when expanding NodeFire path "${template}"`);
         }
       }
-      return NodeFire.escape(value);
+      return NodeFire.escape(value as unknown as string);
     });
   }
 
@@ -921,12 +921,12 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
 }
 
 function handleError(error, op, callback) {
-  let args = _.map(
+  const args: string[] = _.map(
     op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
-  const argsString = JSON.stringify(args);
-  if (argsString.length > 500) args = argsString.slice(0, 500) + '...';
+  let argsString = JSON.stringify(args);
+  if (argsString.length > 500) argsString = argsString.slice(0, 500) + '...';
   error.firebase = {
-    ref: op.ref.toString(), method: op.method, args,
+    ref: op.ref.toString(), method: op.method, argsString,
     code: (error.code || error.message || '').toLowerCase() || undefined
   };
   if (error.message === 'timeout' && error.timeout) {

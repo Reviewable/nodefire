@@ -41,6 +41,8 @@
     "safe-timers": "^1.1.0"
   },
   "devDependencies": {
+    "@types/lodash": "^4.14.191",
+    "@types/lru-cache": "^7.10.10",
     "@types/safe-timers": "^1.1.0",
     "@typescript-eslint/eslint-plugin": "^5.36.1",
     "@typescript-eslint/parser": "^5.36.1",
