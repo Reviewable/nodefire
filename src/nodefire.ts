@@ -921,12 +921,14 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
 }
 
 function handleError(error, op, callback) {
-  let args: string[]|string = _.map(
+  const args: any[] = _.map(
     op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
   const argsString = JSON.stringify(args);
-  if (argsString.length > 500) args = argsString.slice(0, 500) + '...';
+  let argsToSentry: any[]|string;
+  if (argsString.length > 500) argsToSentry = argsString.slice(0, 500) + '...';
+  else argsToSentry = args;
   error.firebase = {
-    ref: op.ref.toString(), method: op.method, args: args,
+    ref: op.ref.toString(), method: op.method, args: argsToSentry,
     code: (error.code || error.message || '').toLowerCase() || undefined
   };
   if (error.message === 'timeout' && error.timeout) {
