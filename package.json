@@ -38,9 +38,12 @@
     "firefight": "1.x",
     "lodash": "^4.17.21",
     "lru-cache": "6.x",
-    "safe-timers": "1.x"
+    "safe-timers": "^1.1.0"
   },
   "devDependencies": {
+    "@types/lodash": "^4.14.191",
+    "@types/lru-cache": "^7.10.10",
+    "@types/safe-timers": "^1.1.0",
     "@typescript-eslint/eslint-plugin": "^5.36.1",
     "@typescript-eslint/parser": "^5.36.1",
     "eslint": "^8.22.0",
