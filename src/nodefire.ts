@@ -924,9 +924,8 @@ function handleError(error, op, callback) {
   const args: any[] = _.map(
     op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
   const argsString = JSON.stringify(args);
-  let argsToSentry: any[]|string;
-  if (argsString.length > 500) argsToSentry = argsString.slice(0, 500) + '...';
-  else argsToSentry = args;
+  let argsToSentry: any[] | string =
+    argsString.length > 500 ? argsString.slice(0, 500) + '...' : args;
   error.firebase = {
     ref: op.ref.toString(), method: op.method, args: argsToSentry,
     code: (error.code || error.message || '').toLowerCase() || undefined
