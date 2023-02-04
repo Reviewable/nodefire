@@ -38,6 +38,7 @@
     "firefight": "1.x",
     "lodash": "^4.17.21",
     "lru-cache": "6.x",
+    "safe-timers": "^1.1.0",
     "safe-promise-tools": "^3.0.0"
   },
   "devDependencies": {
