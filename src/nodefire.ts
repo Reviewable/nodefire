@@ -919,7 +919,7 @@ function handleError(error, op, callback) {
     ref: op.ref.toString(), method: op.method, args: argsToSentry,
     code: (error.code || error.message || '').toLowerCase() || undefined
   };
-  if (error.message === 'timeout' && error.timeout) {
+  if (error instanceof TimeoutError && error.timeout) {
     error.firebase.timeout = error.timeout;
     delete error.timeout;
   }
