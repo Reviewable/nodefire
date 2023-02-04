@@ -1,11 +1,11 @@
 import admin from 'firebase-admin';
-import {setTimeout, Timeout} from 'safe-timers';
+import {timeout, TimeoutError} from 'safe-promise-tools';
+import {setTimeout, type Timeout} from 'safe-timers';
 import _ from 'lodash';
 import LRUCache from 'lru-cache';
 import firebaseChildrenKeys from 'firebase-childrenkeys';
 import {Simulator} from 'firefight';
 import {Agent} from 'http';
-import { timeout, TimeoutError } from 'promise-timeout';
 
 export type InterceptOperationsCallback = (
   op: {ref: NodeFire, method: string, args: any[]},
@@ -903,7 +903,7 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
       promise = timeout(promise, options.timeout);
     }
     return promise.catch(e => {
-      if (e.message === 'timeout') e.timeout = options.timeout;
+      if (e instanceof TimeoutError) e.timeout = options.timeout;
       return handleError(e, op, Promise.reject.bind(Promise));
     });
   });

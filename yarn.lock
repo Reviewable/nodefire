@@ -1836,6 +1836,13 @@ safe-buffer@>=5.1.0, safe-buffer@^5.0.1, safe-buffer@~5.2.0:
   resolved "https://registry.yarnpkg.com/safe-buffer/-/safe-buffer-5.2.1.tgz#1eaf9fa9bdb1fdd4ec75f58f9cdb4e6b7827eec6"
   integrity sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==
 
+safe-promise-tools@^3.0.0:
+  version "3.0.0"
+  resolved "https://registry.yarnpkg.com/safe-promise-tools/-/safe-promise-tools-3.0.0.tgz#61adc3ecaa7bc5d38c9b3957fc391e1827ceb705"
+  integrity sha512-oHMyE230HDSzf7tpIxgql8j8Q/uyuUT021+x8WwYm47RMPZyrFpVKHiRA/H0XcHiPaahFRC5sBGgSE4A8kykBw==
+  dependencies:
+    safe-timers "^1.1.0"
+
 safe-timers@^1.1.0:
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/safe-timers/-/safe-timers-1.1.0.tgz#c58ae8325db8d3b067322f0a4ef3a0cad67aad83"
