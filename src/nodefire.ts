@@ -397,17 +397,15 @@ export default class NodeFire {
         (interceptor: InterceptOperationsCallback) => Promise.resolve(interceptor(op, options))
       )
     ).then(() => {
-      const promise = new Promise<void>((resolve, reject) => {
+      let promise = new Promise<void>((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
-        let aborted = false, settled = false;
         const inputValues: any[] = [];
         let numConsecutiveEqualInputValues = 0;
 
         function wrappedUpdateFunction(value) {
           try {
             wrappedReject = wrappedRejectNoResult;
-            if (aborted) return;  // transaction otherwise aborted and promise settled, just stop
             if (options.detectStuck) {
               if (inputValues.length && _.isEqual(value, _.last(inputValues))) {
                 numConsecutiveEqualInputValues++;
@@ -435,7 +433,7 @@ export default class NodeFire {
           }
         }
 
-        let onceTxn, timeout: Timeout;
+        let onceTxn;
         function txn() {
           if (!prefetchDoneTime) prefetchDoneTime = self.now;
           try {
@@ -444,8 +442,6 @@ export default class NodeFire {
                 txn();
                 return;
               }
-              settled = true;
-              if (timeout) timeout.clear();
               if (onceTxn) self.$ref.off('value', onceTxn);
               fillMetadata(error ? 'error' : (committed ? 'commit' : 'skip'));
               if (NodeFire.LOG_TRANSACTIONS) {
@@ -466,15 +462,6 @@ export default class NodeFire {
             wrappedReject(e);
           }
         }
-        if (options.timeout) {
-          timeout = setTimeout(() => {
-            if (settled) return;
-            aborted = true;
-            const e: NodeFireError = new Error('timeout');
-            e.timeout = options.timeout;
-            wrappedReject(e);
-          }, options.timeout);
-        }
         if (options.prefetchValue || options.prefetchValue === undefined) {
           // Prefetch the data and keep it "live" during the transaction, to avoid running the
           // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
@@ -487,9 +474,17 @@ export default class NodeFire {
           txn();
         }
       });
+      
+      if (options.timeout) {
+        promise = timeout(promise, options.timeout).catch((e: Error)  => {
+          (e as any).timeout = options.timeout;
+          e.message = 'timeout';
+          throw e as NodeFireError;
+        });
+      }
 
       (promise as any).transaction = metadata;
-      return promise as Promise<void>;
+      return promise;
     });
   }
 
@@ -922,6 +917,7 @@ function handleError(error, op, callback) {
   if (error instanceof TimeoutError && error.timeout) {
     error.firebase.timeout = error.timeout;
     delete error.timeout;
+    error.message = 'timeout';
   }
   if (error.message === 'stuck' && error.inputValues) {
     error.firebase.inputValues = error.inputValues;
