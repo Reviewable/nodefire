@@ -290,15 +290,31 @@ export default class NodeFire {
   /**
    * Updates a value at this reference, setting only the top-level keys supplied and leaving any
    * other ones as-is.
-   * @param  {Object} value The value to update the reference with.
+   * @param {Object | Array<{updates: Object, scope?: any}} obj The value to update the reference
+   * with. If it's an object, the keys are interpolated using this reference's scope.  If it's an
+   * array, each `updates` object's keys are interpolated using the corresponding scope and the
+   * entries merged into the final updates object.  Duplicate keys overwrite previous ones.
+   * Interpolation is skipped if the `rawKeys` option is truthy.
    * @param {{timeout?: number?}=} options
-   * @return {Promise<void>} A promise that is resolved when the value has been updated,
-   * or rejected with an error.
+   * @return {Promise<void>} A promise that is resolved when the value has been updated, or rejected
+   * with an error.
    */
-  update(value: any, options?: {timeout?: number}): Promise<void> {
+  update(obj: any, options?: {timeout?: number, rawKeys?: boolean}): Promise<void> {
+    let interpolatedObj;
+    if (options?.rawKeys) {
+      interpolatedObj = obj;
+    } else if (_.isArray(obj)) {
+      interpolatedObj = {};
+      _.forEach(obj, ({updates, scope}) => {
+        _.assign(
+          interpolatedObj, _.mapKeys(updates, (value, key) => this.scope(scope).interpolate(key)));
+      });
+    } else {
+      interpolatedObj = _.mapKeys(obj, (value, key) => this.interpolate(key));
+    }
     return invoke(
-      {ref: this, method: 'update', args: [value]}, options,
-      (opts: any) => this.$ref.ref.update(value)
+      {ref: this, method: 'update', args: [interpolatedObj]}, options,
+      (opts: any) => this.$ref.ref.update(interpolatedObj)
     );
   }
 
