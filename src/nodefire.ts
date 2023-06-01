@@ -175,6 +175,17 @@ export default class NodeFire {
     });
   }
 
+  /**
+   * Assign one object's properties into another, interpolating the top-level keys in this ref's
+   * scope.
+   * @param target The target object to assign into.
+   * @param source The source object to assign from.
+   * @returns The target object.
+   */
+  assign(target: any, source: any): any {
+    return _.assign(target, _.mapKeys(source, (value, key) => this.interpolate(key)));
+  }
+
   // TODO: add onDisconnect
   // TODO: add user/password-related methods
 
