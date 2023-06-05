@@ -256,10 +256,12 @@ export default class NodeFire {
   }
 
   /**
-   * Adds this reference to the cache (if maxCacheSize set) and counts a cache hit or miss.
+   * Adds this reference (if it's not a query) to the cache (if maxCacheSize set) and counts a cache
+   * hit or miss.
    */
   cache(): void {
     if (!cache) return;
+    if (!this.$ref.isEqual(this.$ref.ref)) return;  // don't cache queries
     const key = this.database.app.name + '/' + this.path;
     if (cache.has(key)) {
       cacheHits++;
