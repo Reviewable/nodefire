@@ -11,7 +11,16 @@ export type InterceptOperationsCallback = (
   options: any
 ) => Promise<void> | void;
 
-type Value = any;
+export type PrimitiveValue = string | number | boolean | null;
+export type Value = PrimitiveValue | {[key: string]: Value};
+// The precise type defintion is commented out below. We do not use it (at least yet)
+// because it would require us to add a fair amount of boilerplate to our loosely
+// typed code base at Reviewable. That is because you cannot access properties of
+// a union type with no common subset until you cast it to a more specfic type (or any).
+// This wouldn't be an issue though in a project with complete type definitions as you
+// would cast the data read from Firebase to the respecitve interface anyway.
+// export type StoredValue = PrimitiveValue | {[key: string]: NonNullable<StoredValue>};
+export type StoredValue = any;
 
 let cache: any, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
@@ -182,7 +191,9 @@ export default class NodeFire {
    * @param source The source object to assign from.
    * @returns The target object.
    */
-  assign(target: object, source: object): object {
+  assign<T1 extends object, T2 extends object>(
+    target: T1, source: T2
+  ): T1 & {[key: string]: T2[keyof T2]} {
     return _.assign(target, _.mapKeys(source, (value, key) => this.interpolate(key)));
   }
 
@@ -245,7 +256,7 @@ export default class NodeFire {
    * @return A promise that is resolved to the reference's value, or rejected with an
    *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
-  get(options?: {timeout?: number, cache?: boolean}): Promise<Value> {
+  get(options?: {timeout?: number, cache?: boolean}): Promise<StoredValue> {
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       (opts: {cache?: boolean}) => {
@@ -308,7 +319,7 @@ export default class NodeFire {
    * @return {Promise<void>} A promise that is resolved when the value has been updated,
    * or rejected with an error.
    */
-  update(value: any, options?: {timeout?: number}): Promise<void> {
+  update(value: {[key: string]: Value}, options?: {timeout?: number}): Promise<void> {
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
       (opts: any) => this.$ref.ref.update(value)
@@ -369,13 +380,13 @@ export default class NodeFire {
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
   transaction(
-    updateFunction: (value: Value) => Value,
+    updateFunction: (value: StoredValue) => Value | undefined,
     options?: {
       detectStuck?: number,
       prefetchValue?: boolean,
       timeout?: number
     }
-  ): Promise<Value> {
+  ): Promise<StoredValue | undefined> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;  // easier than using => functions or binding explicitly
     let tries = 0, result: any;
@@ -409,7 +420,7 @@ export default class NodeFire {
         (interceptor: InterceptOperationsCallback) => Promise.resolve(interceptor(op, options))
       )
     ).then(() => {
-      const promise = new Promise<void>((resolve, reject) => {
+      const promise = new Promise<StoredValue | undefined>((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
         let aborted = false, settled = false;
@@ -471,7 +482,7 @@ export default class NodeFire {
               } else if (committed) {
                 resolve(getNormalValue(snap));
               } else {
-                resolve();
+                resolve(undefined);
               }
             }, false).catch(noopCallback);
           } catch (e) {
@@ -499,9 +510,7 @@ export default class NodeFire {
           txn();
         }
       });
-
-      (promise as any).transaction = metadata;
-      return promise as Promise<void>;
+      return _.assign(promise, {transaction: metadata});
     });
   }
 
@@ -704,7 +713,7 @@ export default class NodeFire {
     return new NodeFire(this.$ref.orderByChild(path), this.$scope);
   }
 
-  equalTo(value: Value): NodeFire {
+  equalTo(value: PrimitiveValue): NodeFire {
     return new NodeFire(this.$ref.equalTo(value), this.$scope);
   }
 
@@ -716,11 +725,11 @@ export default class NodeFire {
     return new NodeFire(this.$ref.limitToLast(limit), this.$scope);
   }
 
-  startAt(value?: string | number | boolean, key?: string): NodeFire {
+  startAt(value: PrimitiveValue, key?: string): NodeFire {
     return new NodeFire(this.$ref.startAt(value, key), this.$scope);
   }
 
-  endAt(value?: string | number | boolean, key?: string): NodeFire {
+  endAt(value: PrimitiveValue, key?: string): NodeFire {
     return new NodeFire(this.$ref.endAt(value, key), this.$scope);
   }
 
