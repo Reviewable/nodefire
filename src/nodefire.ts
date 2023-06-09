@@ -11,7 +11,9 @@ export type InterceptOperationsCallback = (
   options: any
 ) => Promise<void> | void;
 
-type Value = any;
+export type PrimitiveValue = string | number | boolean | null;
+export type Value = PrimitiveValue | Hash;
+export type Hash = {[key: string]: Value};
 
 let cache: any, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
@@ -308,7 +310,7 @@ export default class NodeFire {
    * @return {Promise<void>} A promise that is resolved when the value has been updated,
    * or rejected with an error.
    */
-  update(value: any, options?: {timeout?: number}): Promise<void> {
+  update(value: Hash, options?: {timeout?: number}): Promise<void> {
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
       (opts: any) => this.$ref.ref.update(value)
@@ -369,13 +371,13 @@ export default class NodeFire {
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
   transaction(
-    updateFunction: (value: Value) => Value,
+    updateFunction: (value: Value) => Value | undefined,
     options?: {
       detectStuck?: number,
       prefetchValue?: boolean,
       timeout?: number
     }
-  ): Promise<Value> {
+  ): Promise<Value | undefined> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;  // easier than using => functions or binding explicitly
     let tries = 0, result: any;
@@ -409,7 +411,7 @@ export default class NodeFire {
         (interceptor: InterceptOperationsCallback) => Promise.resolve(interceptor(op, options))
       )
     ).then(() => {
-      const promise = new Promise<void>((resolve, reject) => {
+      const promise = new Promise<Value | undefined>((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
         let aborted = false, settled = false;
@@ -471,7 +473,7 @@ export default class NodeFire {
               } else if (committed) {
                 resolve(getNormalValue(snap));
               } else {
-                resolve();
+                resolve(undefined);
               }
             }, false).catch(noopCallback);
           } catch (e) {
@@ -499,9 +501,7 @@ export default class NodeFire {
           txn();
         }
       });
-
-      (promise as any).transaction = metadata;
-      return promise as Promise<void>;
+      return _.assign(promise, {transaction: metadata});
     });
   }
 
@@ -704,7 +704,7 @@ export default class NodeFire {
     return new NodeFire(this.$ref.orderByChild(path), this.$scope);
   }
 
-  equalTo(value: Value): NodeFire {
+  equalTo(value: PrimitiveValue): NodeFire {
     return new NodeFire(this.$ref.equalTo(value), this.$scope);
   }
 
@@ -716,11 +716,11 @@ export default class NodeFire {
     return new NodeFire(this.$ref.limitToLast(limit), this.$scope);
   }
 
-  startAt(value?: string | number | boolean, key?: string): NodeFire {
+  startAt(value: PrimitiveValue, key?: string): NodeFire {
     return new NodeFire(this.$ref.startAt(value, key), this.$scope);
   }
 
-  endAt(value?: string | number | boolean, key?: string): NodeFire {
+  endAt(value: PrimitiveValue, key?: string): NodeFire {
     return new NodeFire(this.$ref.endAt(value, key), this.$scope);
   }
 
