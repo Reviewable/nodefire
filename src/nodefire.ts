@@ -274,7 +274,7 @@ export default class NodeFire {
     if (!cache) return;
     if (!this.$ref.isEqual(this.$ref.ref)) return;  // don't cache queries
     const key = this.database.app.name + '/' + this.path;
-    if (cache.has(key)) {
+    if (cache.get(key)) {
       cacheHits++;
     } else {
       cacheMisses++;
