@@ -379,14 +379,14 @@ export default class NodeFire {
    * @return {Promise} A promise that is resolved with the (normalized) committed value if the
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
-  transaction(
-    updateFunction: (value: StoredValue) => Value | undefined,
+  transaction<T>(
+    updateFunction: (value: StoredValue) => T,
     options?: {
       detectStuck?: number,
       prefetchValue?: boolean,
       timeout?: number
     }
-  ): Promise<StoredValue | undefined> {
+  ): Promise<T> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;  // easier than using => functions or binding explicitly
     let tries = 0, result: any;
