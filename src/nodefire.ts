@@ -12,14 +12,7 @@ export type InterceptOperationsCallback = (
 ) => Promise<void> | void;
 
 export type PrimitiveValue = string | number | boolean | null;
-export type Value = PrimitiveValue | {[key: string]: Value};
-// The precise type defintion is commented out below. We do not use it (at least yet)
-// because it would require us to add a fair amount of boilerplate to our loosely
-// typed code base at Reviewable. That is because you cannot access properties of
-// a union type with no common subset until you cast it to a more specfic type (or any).
-// This wouldn't be an issue though in a project with complete type definitions as you
-// would cast the data read from Firebase to the respecitve interface anyway.
-// export type StoredValue = PrimitiveValue | {[key: string]: NonNullable<StoredValue>};
+export type Value = NonNullable<unknown> | null;
 export type StoredValue = any;
 
 let cache: any, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
