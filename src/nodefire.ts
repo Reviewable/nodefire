@@ -7,7 +7,7 @@ import {Simulator} from 'firefight';
 import {Agent} from 'http';
 
 export type InterceptOperationsCallback = (
-  op: {ref: NodeFire, method: string, args: any[]},
+  op: {ref: NodeFire<Scope>, method: string, args: any[]},
   options: any
 ) => Promise<void> | void;
 
@@ -22,6 +22,8 @@ const operationInterceptors: InterceptOperationsCallback[] = [];
 export interface Scope {
   [key: string]: any;
 }
+
+type EmptyScope = {};  // eslint-disable-line @typescript-eslint/ban-types
 
 export interface NodeFireError extends Error {
   inputValues?: any;
@@ -49,13 +51,13 @@ declare module '@firebase/database-types' {
  * standard option is `timeout`, which will cause an operation to time out after the given number of
  * milliseconds.  Other operation-specific options are described in their respective doc comments.
  */
-export default class NodeFire {
+export default class NodeFire<TScope extends Scope = EmptyScope> {
   /**
    * Flag that indicates whether to log transactions and the number of tries needed.
    */
   static LOG_TRANSACTIONS = false;
   $ref: admin.database.Reference | admin.database.Query;
-  $scope: Scope;
+  $scope: TScope;
   private _path?: string;
 
   /**
@@ -64,7 +66,7 @@ export default class NodeFire {
    * @param ref A fully authenticated Firebase Admin reference or query.
    * @param scope Optional dictionary that will be used for interpolating paths.
    */
-  constructor(ref: admin.database.Reference | admin.database.Query, scope?: Scope) {
+  constructor(ref: admin.database.Reference | admin.database.Query, scope?: TScope) {
     const refIsNonNullObject = typeof ref === 'object' && ref !== null;
     if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
         typeof ref.ref.transaction !== 'function') {
@@ -73,7 +75,7 @@ export default class NodeFire {
         but got "${ref}".`
       );
     }
-    this.$scope = scope || {};
+    this.$scope = scope || {} as TScope;
     this.$ref = ref;
     this._path = undefined;  // initialized lazily
 
@@ -124,7 +126,7 @@ export default class NodeFire {
    * Returns a NodeFire reference at the same location as this query or reference.
    * @return A NodeFire reference at the same location as this query or reference.
    */
-  get ref(): NodeFire {
+  get ref(): NodeFire<TScope> {
     if (this.$ref.isEqual(this.$ref.ref)) return this;
     return new NodeFire(this.$ref.ref, this.$scope);
   }
@@ -133,7 +135,7 @@ export default class NodeFire {
    * Returns a NodeFire reference to the root of the database.
    * @return {NodeFire} The root reference of the database.
    */
-  get root(): NodeFire {
+  get root(): NodeFire<TScope> {
     if (this.$ref.isEqual(this.$ref.ref.root)) return this;
     return new NodeFire(this.$ref.ref.root, this.$scope);
   }
@@ -143,7 +145,7 @@ export default class NodeFire {
    * reference is `null`.
    * @return {NodeFire|null} The parent location of this reference.
    */
-  get parent(): NodeFire | null {
+  get parent(): NodeFire<TScope> | null {
     if (this.$ref.ref.parent === null) return null;
     return new NodeFire(this.$ref.ref.parent, this.$scope);
   }
@@ -206,7 +208,7 @@ export default class NodeFire {
    * @param {Nodefire} otherRef Another NodeFire instance against which to compare.
    * @return {boolean}
    */
-  isEqual(otherRef: NodeFire): boolean {
+  isEqual(otherRef: NodeFire<Scope>): boolean {
     return this.$ref.isEqual(otherRef.$ref);
   }
 
@@ -224,7 +226,7 @@ export default class NodeFire {
    *     precedence over) the one carried by this NodeFire object.
    * @return A new NodeFire object with the same reference and new scope.
    */
-  scope(scope: Scope): NodeFire {
+  scope<TSource extends Scope>(scope: TSource): NodeFire<TScope & TSource> {
     return new NodeFire(this.$ref, _.assign(_.clone(this.$scope), scope));
   }
 
@@ -237,7 +239,9 @@ export default class NodeFire {
    *     scope.
    * @return {NodeFire} A new NodeFire object on the child reference, and with the augmented scope.
    */
-  child(path: string, scope?: Scope): NodeFire {
+  child<TSource extends Scope = EmptyScope>(
+    path: string, scope?: TSource):
+  NodeFire<TScope & TSource> {
     const child = this.scope(scope);
     return new NodeFire(this.$ref.ref.child(child.interpolate(path)), child.$scope);
   }
@@ -338,7 +342,7 @@ export default class NodeFire {
    * @return A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
-  push(value: Value, options?: { timeout?: number }): Promise<NodeFire> {
+  push(value: Value, options?: { timeout?: number }): Promise<NodeFire<TScope>> {
     if (value === undefined || value === null) {
       return Promise.resolve(new NodeFire(this.$ref.ref.push(), this.$scope));
     }
@@ -702,35 +706,35 @@ export default class NodeFire {
     });
   }
 
-  orderByChild(path: string): NodeFire {
+  orderByChild(path: string): NodeFire<TScope> {
     return new NodeFire(this.$ref.orderByChild(path), this.$scope);
   }
 
-  equalTo(value: PrimitiveValue): NodeFire {
+  equalTo(value: PrimitiveValue): NodeFire<TScope> {
     return new NodeFire(this.$ref.equalTo(value), this.$scope);
   }
 
-  limitToFirst(limit: number): NodeFire {
+  limitToFirst(limit: number): NodeFire<TScope> {
     return new NodeFire(this.$ref.limitToFirst(limit), this.$scope);
   }
 
-  limitToLast(limit: number): NodeFire {
+  limitToLast(limit: number): NodeFire<TScope> {
     return new NodeFire(this.$ref.limitToLast(limit), this.$scope);
   }
 
-  startAt(value: PrimitiveValue, key?: string): NodeFire {
+  startAt(value: PrimitiveValue, key?: string): NodeFire<TScope> {
     return new NodeFire(this.$ref.startAt(value, key), this.$scope);
   }
 
-  endAt(value: PrimitiveValue, key?: string): NodeFire {
+  endAt(value: PrimitiveValue, key?: string): NodeFire<TScope> {
     return new NodeFire(this.$ref.endAt(value, key), this.$scope);
   }
 
-  orderByKey(): NodeFire {
+  orderByKey(): NodeFire<TScope> {
     return new NodeFire(this.$ref.orderByKey(), this.$scope);
   }
 
-  orderByValue(): NodeFire {
+  orderByValue(): NodeFire<TScope> {
     return new NodeFire(this.$ref.orderByValue(), this.$scope);
   }
 }
@@ -741,10 +745,10 @@ export default class NodeFire {
   ref returns a NodeFire instance, val() normalizes the value, and child() takes an optional
   refining scope.
  */
-export class Snapshot {
+export class Snapshot<TScope extends Scope> {
   $snap: admin.database.DataSnapshot;
-  $nodeFire: NodeFire;
-  constructor(snap: admin.database.DataSnapshot, nodeFire: NodeFire) {
+  $nodeFire: NodeFire<TScope>;
+  constructor(snap: admin.database.DataSnapshot, nodeFire: NodeFire<TScope>) {
     this.$snap = snap;
     this.$nodeFire = nodeFire;
   }
@@ -753,7 +757,7 @@ export class Snapshot {
     return this.$snap.key;
   }
 
-  get ref(): NodeFire {
+  get ref(): NodeFire<TScope> {
     return new NodeFire(this.$snap.ref, this.$nodeFire.$scope);
   }
 
@@ -761,12 +765,12 @@ export class Snapshot {
     return getNormalValue(this.$snap);
   }
 
-  child(path: string, scope: Scope): Snapshot {
+  child<TSource extends Scope>(path: string, scope: TSource): Snapshot<TScope & TSource> {
     const childNodeFire = this.$nodeFire.scope(scope);
     return new Snapshot(this.$snap.child(childNodeFire.interpolate(path)), childNodeFire);
   }
 
-  forEach(callback: (snapshot: Snapshot) => any): any {
+  forEach(callback: (snapshot: Snapshot<TScope>) => any): any {
     this.$snap.forEach(child => {
       return callback(new Snapshot(child, this.$nodeFire));
     });
@@ -798,7 +802,7 @@ type CapturableCallback =
 // wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
 // call to off().
 function captureCallback(
-  nodeFire: NodeFire,
+  nodeFire: NodeFire<Scope>,
   eventType: admin.database.EventType,
   callback: CapturableCallback,
 ): (a: admin.database.DataSnapshot, b?: string) => any {
@@ -814,7 +818,7 @@ function captureCallback(
 }
 
 function popCallback(
-  nodeFire: NodeFire, eventType: admin.database.EventType, callback: CapturableCallback
+  nodeFire: NodeFire<Scope>, eventType: admin.database.EventType, callback: CapturableCallback
 ): NodeFireCallback {
   const key = eventType + '::' + nodeFire.toString();
   return callback.$nodeFireCallbacks[key].pop();
@@ -839,7 +843,7 @@ function delegateSnapshot(method) {
   };
 }
 
-function wrapReject(nodefire: NodeFire, method, value, reject?) {
+function wrapReject(nodefire: NodeFire<Scope>, method, value, reject?) {
   let hasValue = true;
   if (!reject) {
     reject = value;
