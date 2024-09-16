@@ -34,7 +34,7 @@ declare module '@firebase/database-types' {
     childrenKeys?: (options: any) => Promise<string[]>;
 
     // Not documented in firebase-admin, so TypeScript thinks it's not there (but it is).
-    database?: admin.database.Database;
+    database: admin.database.Database;
   }
 }
 
@@ -96,7 +96,7 @@ export default class NodeFire {
    * Returns the database instance corresponding to this reference.
    * @return {admin.database.Database} The database instance corresponding to this reference.
    */
-  get database(): admin.database.Database | undefined {
+  get database(): admin.database.Database {
     return this.$ref.ref.database;
   }
 
@@ -224,7 +224,7 @@ export default class NodeFire {
    *     precedence over) the one carried by this NodeFire object.
    * @return A new NodeFire object with the same reference and new scope.
    */
-  scope(scope: Scope): NodeFire {
+  scope(scope?: Scope): NodeFire {
     return new NodeFire(this.$ref, _.assign(_.clone(this.$scope), scope));
   }
 
@@ -282,7 +282,7 @@ export default class NodeFire {
    * Removes this reference from the cache (if maxCacheSize is set).
    * @return True if the reference was cached, false otherwise.
    */
-  uncache(): null | boolean {
+  uncache(): undefined | boolean {
     if (!cache) return;
     const key = this.database.app.name + '/' + this.path;
     if (!cache.has(key)) return false;
@@ -391,7 +391,6 @@ export default class NodeFire {
       prefetchDuration?:
       number; duration?: number;
     } = {};
-    options = options || {};
 
     function fillMetadata(outcome: any) {
       if (metadata.outcome) return;
@@ -424,7 +423,7 @@ export default class NodeFire {
           try {
             wrappedReject = wrappedRejectNoResult;
             if (aborted) return;  // transaction otherwise aborted and promise settled, just stop
-            if (options.detectStuck) {
+            if (options?.detectStuck) {
               if (inputValues.length && _.isEqual(value, _.last(inputValues))) {
                 numConsecutiveEqualInputValues++;
               } else {
@@ -473,7 +472,7 @@ export default class NodeFire {
               if (error) {
                 wrappedReject(error);
               } else if (committed) {
-                resolve(getNormalValue(snap));
+                resolve(getNormalValue(snap!));
               } else {
                 resolve(undefined);
               }
@@ -482,7 +481,7 @@ export default class NodeFire {
             wrappedReject(e);
           }
         }
-        if (options.timeout) {
+        if (options?.timeout) {
           timeout = setTimeout(() => {
             if (settled) return;
             aborted = true;
@@ -491,7 +490,7 @@ export default class NodeFire {
             wrappedReject(e);
           }, options.timeout);
         }
-        if (options.prefetchValue || options.prefetchValue === undefined) {
+        if (options?.prefetchValue || options?.prefetchValue === undefined) {
           // Prefetch the data and keep it "live" during the transaction, to avoid running the
           // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
           // data from the server.  Also pull it into the cache to speed future transactions at
@@ -545,7 +544,7 @@ export default class NodeFire {
    * @return {string} A unique string that satisfies Firebase's key syntax constraints.
    */
   newKey(): string {
-    return this.$ref.ref.push().key;
+    return this.$ref.ref.push().key!;
   }
 
   /**
@@ -749,7 +748,7 @@ export class Snapshot {
     this.$nodeFire = nodeFire;
   }
 
-  get key(): string {
+  get key(): string | null {
     return this.$snap.key;
   }
 
@@ -814,10 +813,10 @@ function captureCallback(
 }
 
 function popCallback(
-  nodeFire: NodeFire, eventType: admin.database.EventType, callback: CapturableCallback
+  nodeFire: NodeFire, eventType: admin.database.EventType | undefined, callback: CapturableCallback
 ): NodeFireCallback {
   const key = eventType + '::' + nodeFire.toString();
-  return callback.$nodeFireCallbacks[key].pop();
+  return callback.$nodeFireCallbacks![key].pop();
 }
 
 function runGenerator(o) {
@@ -912,13 +911,13 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
       interceptor => Promise.resolve(interceptor(op, options))
     )
   ).then(() => {
-    const promises = [];
-    let timeout: Timeout, settled;
+    const promises: Promise<void>[] = [];
+    let timeout: Timeout | undefined, settled = false;
     if (options.timeout) {
       promises.push(new Promise((resolve, reject) => {
         timeout = setTimeout(() => {
           if (!settled) reject(new Error('timeout'));
-        }, options.timeout);
+        }, options.timeout!);
       }));
     }
     promises.push(Promise.resolve(fn(options)).then(result => {
