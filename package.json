@@ -44,9 +44,8 @@
     "@types/lodash": "^4.14.191",
     "@types/lru-cache": "^7.10.10",
     "@types/safe-timers": "^1.1.0",
-    "@typescript-eslint/eslint-plugin": "^6.18.1",
-    "@typescript-eslint/parser": "^6.18.1",
-    "eslint": "^8.22.0",
+    "eslint": "^8.57.0",
+    "reviewable-configs": "Reviewable/reviewable-configs#init",
     "typescript": "^5.3.3"
   }
 }
