@@ -65,9 +65,7 @@ export default class NodeFire {
    * @param scope Optional dictionary that will be used for interpolating paths.
    */
   constructor(ref: admin.database.Reference | admin.database.Query, scope?: Scope) {
-    const refIsNonNullObject = typeof ref === 'object' && ref !== null;
-    if (!refIsNonNullObject || typeof ref.ref !== 'object' ||
-        typeof ref.ref.transaction !== 'function') {
+    if (!_.isFunction(typeof ref?.ref?.transaction)) {
       throw new Error(
         `Expected first argument passed to NodeFire constructor to be a Firebase Database reference,
         but got "${ref}".`
@@ -339,7 +337,7 @@ export default class NodeFire {
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
   push(value: Value, options?: { timeout?: number }): Promise<NodeFire> {
-    if (value === undefined || value === null) {
+    if (_.isNil(value)) {
       return Promise.resolve(new NodeFire(this.$ref.ref.push(), this.$scope));
     }
     return invoke({ref: this, method: 'push', args: [value]}, options, (opts: any) => {
@@ -766,6 +764,7 @@ export class Snapshot {
   }
 
   forEach(callback: (snapshot: Snapshot) => any): any {
+    // eslint-disable-next-line lodash/prefer-lodash-method
     this.$snap.forEach(child => {
       return callback(new Snapshot(child, this.$nodeFire));
     });
@@ -824,7 +823,7 @@ function runGenerator(o) {
   if (o instanceof Promise) {
     promise = o;
   } else if (
-    o && typeof o.next === 'function' && typeof o.throw === 'function' && (Promise as any).co
+    o && _.isFunction(o.next) && _.isFunction(o.throw) && (Promise as any).co
   ) {
     promise = (Promise as any).co(o);
   }
@@ -876,6 +875,7 @@ function trimCache(ref) {
   if (!cache || cache.max <= maxCacheSizeForDisconnectedApp) return;
   const prefix = ref.database.app.name + '/';
   let count = 0;
+  // eslint-disable-next-line lodash/prefer-lodash-method
   cache.forEach((value, key) => {
     if (key.slice(0, prefix.length) !== prefix) return;
     if (++count <= maxCacheSizeForDisconnectedApp) return;
@@ -940,7 +940,7 @@ function handleError(error, op, callback) {
 
   error.firebase = {
     ref: op.ref.toString(), method: op.method, args,
-    code: (error.code || error.message || '').toLowerCase() || undefined
+    code: _.toLower(error.code || error.message) || undefined
   };
   if (error.message === 'timeout' && error.timeout) {
     error.firebase.timeout = error.timeout;
