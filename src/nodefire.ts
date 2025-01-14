@@ -65,7 +65,7 @@ export default class NodeFire {
    * @param scope Optional dictionary that will be used for interpolating paths.
    */
   constructor(ref: admin.database.Reference | admin.database.Query, scope?: Scope) {
-    if (!_.isFunction(typeof ref?.ref?.transaction)) {
+    if (!_.isFunction(ref?.ref?.transaction)) {
       throw new Error(
         `Expected first argument passed to NodeFire constructor to be a Firebase Database reference,
         but got "${ref}".`
