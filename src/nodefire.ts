@@ -380,6 +380,7 @@ export default class NodeFire {
   ): Promise<T> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;  // easier than using => functions or binding explicitly
+    options = options ?? {};
     let tries = 0, result: any;
     const startTime = self.now;
     let prefetchDoneTime: number;
@@ -905,6 +906,7 @@ function getNormalRawValue(value: any): Value {
 }
 
 function invoke(op, options: {timeout?: number} = {}, fn) {
+  options = options ?? {};
   return Promise.all(
     _.map(
       operationInterceptors,
