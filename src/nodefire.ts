@@ -484,9 +484,7 @@ export default class NodeFire {
           timeout = setTimeout(() => {
             if (settled) return;
             aborted = true;
-            const e: NodeFireError = new Error('timeout');
-            e.timeout = options.timeout;
-            wrappedReject(e);
+            wrappedReject(_.assign(new Error('timeout'), {options, op}));
           }, options.timeout);
         }
         if (options?.prefetchValue || options?.prefetchValue === undefined) {
@@ -918,7 +916,7 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
     if (options.timeout) {
       promises.push(new Promise((resolve, reject) => {
         timeout = setTimeout(() => {
-          if (!settled) reject(new Error('timeout'));
+          if (!settled) reject(_.assign(new Error('timeout'), {options, op}));
         }, options.timeout!);
       }));
     }
