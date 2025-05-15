@@ -311,6 +311,7 @@ export default class NodeFire {
    * or rejected with an error.
    */
   update(value: {[key: string]: Value}, options?: {timeout?: number}): Promise<void> {
+    if (_.isEmpty(value)) return Promise.resolve();
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
       (opts: any) => this.$ref.ref.update(value)
