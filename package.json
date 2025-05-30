@@ -10,6 +10,7 @@
   "engines": {
     "node": ">=8.0"
   },
+  "packageManager": "yarn@1.22.22",
   "scripts": {
     "test": "node src/tests/runner.js",
     "update": "yarn upgrade-interactive --latest",
