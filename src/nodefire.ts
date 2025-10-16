@@ -437,7 +437,11 @@ export default class NodeFire {
               }
             }
             if (++tries > 25) throw new Error('maxretry');
-            result = updateFunction(getNormalRawValue(value));
+            const normalizedValue = getNormalRawValue(value);
+            // Don't modify errors originating from the update function itself,
+            // they are not Firebase errors.
+            wrappedReject = reject;
+            result = updateFunction(normalizedValue);
             wrappedReject = wrapReject(self, 'transaction', result, reject);
             return result;
           } catch (e) {
