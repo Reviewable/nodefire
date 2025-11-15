@@ -241,6 +241,18 @@ export default class NodeFire {
   }
 
   /**
+   * Creates a new NodeFire object on a child of this one, without interpolating the path.  Useful
+   * when the path may contain interpolation syntax that must be disregarded, and you've already
+   * manually escaped it.
+   * @param path The path to the desired child, relative to this reference.  The path will not be
+   *     interpolated and must already be escaped, if necessary.
+   * @returns {NodeFire} A new NodeFire object on the child reference.
+   */
+  childRaw(path: string): NodeFire {
+    return new NodeFire(this.$ref.ref.child(path), _.clone(this.$scope));
+  }
+
+  /**
    * Gets this reference's current value from Firebase, and inserts it into the cache if a
    * maxCacheSize was set and the `cache` option is not false.
    * @param options
