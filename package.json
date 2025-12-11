@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "3.9.0",
+  "version": "3.9.1",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "built/index.js",
   "types": "built/index.d.ts",
@@ -12,16 +12,12 @@
   },
   "packageManager": "yarn@1.22.22",
   "scripts": {
-    "test": "node src/tests/runner.js",
     "update": "yarn upgrade-interactive --latest",
     "lint": "eslint src/*.ts",
     "build": "tsc",
     "prepublish": "tsc"
   },
-  "repository": {
-    "type": "git",
-    "url": "git://github.com/pkaminski/nodefire.git"
-  },
+  "repository": "https://github.com/Reviewable/nodefire",
   "keywords": [
     "Firebase",
     "api",
@@ -30,9 +26,9 @@
   "author": "Piotr Kaminski <piotr@ideanest.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/pkaminski/nodefire/issues"
+    "url": "https://github.com/Reviewable/nodefire/issues"
   },
-  "homepage": "https://github.com/pkaminski/nodefire",
+  "homepage": "https://github.com/Reviewable/nodefire",
   "dependencies": {
     "firebase-admin": "10.x || 11.x || 12.x || 13.x",
     "firebase-childrenkeys": "^2.3.5",
