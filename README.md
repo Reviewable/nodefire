@@ -118,20 +118,10 @@ static interceptOperations(callback)
 
 /**
  * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not used
- * unless you set a non-zero maximum.
+ * unless you set a non-zero maximum.  Setting a new size clears the cache.
  * @param {number} max The maximum number of values to keep pinned in the cache.
  */
 static setCacheSize(max)
-
-/**
- * Sets the maximum number of pinned values to retain in the cache when an app gets disconnected.
- * By default all values are retained, but if your cache size is high they'll all need to be double-
- * checked against the Firebase server when the connection comes back.  It may thus be more
- * economical to drop the least used ones when disconnected.
- * @param {number} max The maximum number of values from a disconnected app to keep pinned in the
- *        cache.
- */
-static setCacheSizeForDisconnectedApp(max)
 
 /**
  * Gets the current number of values pinned in the cache.
