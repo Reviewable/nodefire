@@ -1,7 +1,7 @@
 import admin from 'firebase-admin';
 import {setTimeout, Timeout} from 'safe-timers';
 import _ from 'lodash';
-import LRUCache from 'lru-cache';
+import {LRUCache} from 'lru-cache';
 import firebaseChildrenKeys from 'firebase-childrenkeys';
 import {Simulator} from 'firefight';
 import {Agent} from 'http';
@@ -15,7 +15,8 @@ export type PrimitiveValue = string | number | boolean | null;
 export type Value = NonNullable<unknown> | null;
 export type StoredValue = any;
 
-let cache: any, cacheHits = 0, cacheMisses = 0, maxCacheSizeForDisconnectedApp = Infinity;
+let cache: LRUCache<string, NodeFire> | null;
+let cacheHits = 0, cacheMisses = 0;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors: InterceptOperationsCallback[] = [];
 
@@ -283,7 +284,7 @@ export default class NodeFire {
       cacheMisses++;
       cache.set(key, this);
       this.$ref.on('value', noopCallback, () => {
-        if (cache) cache.del(key);
+        if (cache) cache.delete(key);
       });
     }
   }
@@ -296,7 +297,7 @@ export default class NodeFire {
     if (!cache) return;
     const key = this.database.app.name + '/' + this.path;
     if (!cache.has(key)) return false;
-    cache.del(key);
+    cache.delete(key);
     return true;
   }
 
@@ -637,34 +638,18 @@ export default class NodeFire {
 
   /**
    * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not
-   * used unless you set a non-zero maximum.
+   * used unless you set a non-zero maximum.  Setting a new size clears the cache.
    * @param {number} max The maximum number of values to keep pinned in the cache.
    */
   static setCacheSize(max: number): void {
+    if (cache) cache.clear();
     if (max) {
-      if (cache) {
-        cache.max = max;
-      } else {
-        cache = new LRUCache({max, dispose(key, ref) {
-          ref.$ref.off('value', noopCallback);
-        }});
-      }
+      cache = new LRUCache({max, dispose(ref, key) {
+        ref.$ref.off('value', noopCallback);
+      }});
     } else {
-      if (cache) cache.reset();
       cache = null;
     }
-  }
-
-  /**
-   * Sets the maximum number of pinned values to retain in the cache when an app gets disconnected.
-   * By default all values are retained, but if your cache size is high they'll all need to be
-   * double-checked against the Firebase server when the connection comes back.  It may thus be more
-   * economical to drop the least used ones when disconnected.
-   * @param {number} max The maximum number of values from a disconnected app to keep pinned in the
-   *        cache.
-   */
-  static setCacheSizeForDisconnectedApp(max: number): void {
-    maxCacheSizeForDisconnectedApp = max;
   }
 
   /**
@@ -672,7 +657,7 @@ export default class NodeFire {
    * @return {number} The current size of the cache.
    */
   static getCacheCount(): number {
-    return cache ? cache.itemCount : 0;
+    return cache ? cache.size : 0;
   }
 
   /**
@@ -888,14 +873,12 @@ function trackDisconnect(ref, recover = false) {
 }
 
 function trimCache(ref) {
-  if (!cache || cache.max <= maxCacheSizeForDisconnectedApp) return;
+  if (!cache) return;
   const prefix = ref.database.app.name + '/';
-  let count = 0;
   // eslint-disable-next-line lodash/prefer-lodash-method
   cache.forEach((value, key) => {
     if (key.slice(0, prefix.length) !== prefix) return;
-    if (++count <= maxCacheSizeForDisconnectedApp) return;
-    cache.del(key);
+    cache!.delete(key);
   });
 }
 
