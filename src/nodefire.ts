@@ -12,8 +12,15 @@ export type InterceptOperationsCallback = (
 ) => Promise<void> | void;
 
 export type PrimitiveValue = string | number | boolean | null;
-export type Value = NonNullable<unknown> | null;
-export type StoredValue = any;
+export interface Info {
+  connected: boolean;
+  serverTimeOffset: number;
+}
+export type NormalizedValue<T> =
+  T extends readonly (infer U)[] ? Partial<Record<number, NormalizedValue<NonNullable<U>>>> :
+  T extends object ? {[K in keyof T]: NormalizedValue<T[K]>} :
+  T;
+export type ReadValue<T> = Exclude<NormalizedValue<T>, undefined>;
 
 let cache: LRUCache<string, NodeFire> | null;
 let cacheHits = 0, cacheMisses = 0;
@@ -50,7 +57,11 @@ declare module '@firebase/database-types' {
  * standard option is `timeout`, which will cause an operation to time out after the given number of
  * milliseconds.  Other operation-specific options are described in their respective doc comments.
  */
-export default class NodeFire {
+export default class NodeFire<
+  Root = any,
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[] = [],
+  WriteRoot = WriteShape<Root, WriteSpecialRules>
+> {
   /**
    * Flag that indicates whether to log transactions and the number of tries needed.
    */
@@ -123,7 +134,7 @@ export default class NodeFire {
    * Returns a NodeFire reference at the same location as this query or reference.
    * @return A NodeFire reference at the same location as this query or reference.
    */
-  get ref(): NodeFire {
+  get ref(): NodeFire<Root, WriteSpecialRules, WriteRoot> {
     if (this.$ref.isEqual(this.$ref.ref)) return this;
     return new NodeFire(this.$ref.ref, this.$scope);
   }
@@ -132,7 +143,7 @@ export default class NodeFire {
    * Returns a NodeFire reference to the root of the database.
    * @return {NodeFire} The root reference of the database.
    */
-  get root(): NodeFire {
+  get root(): NodeFire<Root, WriteSpecialRules, WriteRoot> {
     if (this.$ref.isEqual(this.$ref.ref.root)) return this;
     return new NodeFire(this.$ref.ref.root, this.$scope);
   }
@@ -142,7 +153,7 @@ export default class NodeFire {
    * reference is `null`.
    * @return {NodeFire|null} The parent location of this reference.
    */
-  get parent(): NodeFire | null {
+  get parent(): NodeFire<Root, WriteSpecialRules, WriteRoot> | null {
     if (this.$ref.ref.parent === null) return null;
     return new NodeFire(this.$ref.ref.parent, this.$scope);
   }
@@ -223,7 +234,7 @@ export default class NodeFire {
    *     precedence over) the one carried by this NodeFire object.
    * @return A new NodeFire object with the same reference and new scope.
    */
-  scope(scope: Scope): NodeFire {
+  scope(scope: Scope): NodeFire<Root, WriteSpecialRules, WriteRoot> {
     return new NodeFire(this.$ref, _.assign(_.clone(this.$scope), scope));
   }
 
@@ -236,6 +247,12 @@ export default class NodeFire {
    *     scope.
    * @return {NodeFire} A new NodeFire object on the child reference, and with the augmented scope.
    */
+  child<P extends string>(path: P & ReadPathInput<Root, P>, scope?: Scope):
+    NodeFire<ReadResultFor<Root, P>, WriteSpecialRules, ResultFor<WriteRoot, P>>;
+
+  child<TypePaths extends string>(path: string, scope?: Scope):
+    NodeFire<ReadResultFor<Root, TypePaths>, WriteSpecialRules, ResultFor<WriteRoot, TypePaths>>;
+
   child(path: string, scope: Scope = {}): NodeFire {
     const child = this.scope(scope);
     return new NodeFire(this.$ref.ref.child(child.interpolate(path)), child.$scope);
@@ -249,8 +266,12 @@ export default class NodeFire {
    *     interpolated and must already be escaped, if necessary.
    * @returns {NodeFire} A new NodeFire object on the child reference.
    */
+  childRaw<P extends string>(
+    path: P & ReadPathInput<Root, P>
+  ): NodeFire<ReadResultFor<Root, P>, WriteSpecialRules, ResultFor<WriteRoot, P>>;
+
   childRaw(path: string): NodeFire {
-    return new NodeFire(this.$ref.ref.child(path), _.clone(this.$scope));
+    return new NodeFire(this.$ref.ref.child(path as string), _.clone(this.$scope));
   }
 
   /**
@@ -260,12 +281,12 @@ export default class NodeFire {
    * @return A promise that is resolved to the reference's value, or rejected with an
    *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
-  get(options?: {timeout?: number, cache?: boolean}): Promise<StoredValue> {
+  get(options?: {timeout?: number, cache?: boolean}): Promise<ReadValue<Root> | null> {
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       (opts: {cache?: boolean}) => {
         if (opts.cache === undefined || opts.cache) this.cache();
-        return this.$ref.once('value').then(snap => getNormalValue(snap));
+        return this.$ref.once('value').then(snap => getNormalValue<Root>(snap));
       }
     );
   }
@@ -308,7 +329,12 @@ export default class NodeFire {
    * @returns {Promise<void>} A promise that is resolved when the value has been set,
    * or rejected with an error.
    */
-  set(value: Value, options?: {timeout?: number}): Promise<void> {
+  set(value: WriteRoot | null, options?: {timeout?: number}): Promise<void>;
+  set(value: unknown, options: {timeout?: number, unchecked: true}): Promise<void>;
+  set(
+    value: unknown,
+    options: {timeout?: number, unchecked?: boolean} = {}
+  ): Promise<void> {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
       (opts: any) => this.$ref.ref.set(value)
@@ -323,7 +349,7 @@ export default class NodeFire {
    * @return {Promise<void>} A promise that is resolved when the value has been updated,
    * or rejected with an error.
    */
-  update(value: {[key: string]: Value}, options?: {timeout?: number}): Promise<void> {
+  update(value: UpdateShape<WriteRoot>, options?: {timeout?: number}): Promise<void> {
     if (_.isPlainObject(value) && _.isEmpty(value)) return Promise.resolve();
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
@@ -350,7 +376,7 @@ export default class NodeFire {
    * @return A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
-  push(value: Value, options?: { timeout?: number }): Promise<NodeFire> {
+  push(value: PushValue<WriteRoot> | null, options?: { timeout?: number }): Promise<NodeFire> {
     if (_.isNil(value)) {
       return Promise.resolve(new NodeFire(this.$ref.ref.push(), this.$scope));
     }
@@ -384,14 +410,14 @@ export default class NodeFire {
    * @return {Promise} A promise that is resolved with the (normalized) committed value if the
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
-  transaction<T>(
-    updateFunction: (value: StoredValue) => T,
+  transaction<T extends WriteRoot | null | undefined>(
+    updateFunction: (value: ReadValue<Root> | null) => T,
     options?: {
       detectStuck?: number,
       prefetchValue?: boolean,
       timeout?: number
     }
-  ): Promise<T> {
+  ): Promise<ReadValue<Root> | null | undefined> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;  // easier than using => functions or binding explicitly
     options = options ?? {};
@@ -425,14 +451,14 @@ export default class NodeFire {
         (interceptor: InterceptOperationsCallback) => Promise.resolve(interceptor(op, options))
       )
     ).then(() => {
-      const promise = new Promise<StoredValue | undefined>((resolve, reject) => {
+      const promise = new Promise<ReadValue<Root> | null | undefined>((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
         let aborted = false, settled = false;
         const inputValues: any[] = [];
         let numConsecutiveEqualInputValues = 0;
 
-        function wrappedUpdateFunction(value) {
+        function wrappedUpdateFunction(value: Root | null) {
           try {
             wrappedReject = wrappedRejectNoResult;
             if (aborted) return;  // transaction otherwise aborted and promise settled, just stop
@@ -489,7 +515,7 @@ export default class NodeFire {
               if (error) {
                 wrappedReject(error);
               } else if (committed) {
-                resolve(getNormalValue(snap!));
+                resolve(getNormalValue<Root>(snap!));
               } else {
                 resolve(undefined);
               }
@@ -534,9 +560,9 @@ export default class NodeFire {
    */
   on(
     eventType: admin.database.EventType,
-    callback: (a: admin.database.DataSnapshot, b?: string) => any,
+    callback: (a: Snapshot<Root>, b?: string) => any,
     cancelCallback?: ((a: Error) => any), context?: object
-  ): (a: admin.database.DataSnapshot, b?: string) => any {
+  ): (a: Snapshot<Root>, b?: string) => any {
     cancelCallback = wrapReject(this, 'on', cancelCallback);
     this.$ref.on(
       eventType, captureCallback(this, eventType, callback), cancelCallback, context);
@@ -548,7 +574,7 @@ export default class NodeFire {
    */
   off(
     eventType?: admin.database.EventType,
-    callback?: (a: admin.database.DataSnapshot, b?: string) => any,
+    callback?: (a: Snapshot<Root>, b?: string) => any,
     context?: object
   ): void {
     this.$ref.off(eventType, callback && popCallback(this, eventType, callback), context);
@@ -739,7 +765,7 @@ export default class NodeFire {
   ref returns a NodeFire instance, val() normalizes the value, and child() takes an optional
   refining scope.
  */
-export class Snapshot {
+export class Snapshot<Root> {
   $snap: admin.database.DataSnapshot;
   $nodeFire: NodeFire;
   constructor(snap: admin.database.DataSnapshot, nodeFire: NodeFire) {
@@ -755,16 +781,18 @@ export class Snapshot {
     return new NodeFire(this.$snap.ref, this.$nodeFire.$scope);
   }
 
-  val(): Value {
-    return getNormalValue(this.$snap);
+  val(): ReadValue<Root> | null {
+    return getNormalValue<Root>(this.$snap);
   }
 
-  child(path: string, scope: Scope): Snapshot {
+  child<P extends string>(
+    path: P & ReadPathInput<Root, P>, scope: Scope
+  ): Snapshot<ReadResultFor<Root, P>> {
     const childNodeFire = this.$nodeFire.scope(scope);
-    return new Snapshot(this.$snap.child(childNodeFire.interpolate(path)), childNodeFire);
+    return new Snapshot(this.$snap.child(childNodeFire.interpolate(path as string)), childNodeFire);
   }
 
-  forEach(callback: (snapshot: Snapshot) => any): any {
+  forEach(callback: (snapshot: Snapshot<any>) => any): any {
     // eslint-disable-next-line lodash/prefer-lodash-method
     this.$snap.forEach(child => {
       return callback(new Snapshot(child, this.$nodeFire));
@@ -788,18 +816,18 @@ interface NodeFireCallbacks {
 }
 
 // We get a little tricky (using & to merge types) to allow attaching a property to a function.
-type CapturableCallback =
-  ((a: admin.database.DataSnapshot, b?: string) => any) &
+type CapturableCallback<T> =
+  ((a: Snapshot<T>, b?: string) => any) &
   {$nodeFireCallbacks?: NodeFireCallbacks};
 
 // We need to wrap the user's callback so that we can wrap each snapshot, but must keep track of the
 // wrapper function in case the user calls off().  We don't reuse wrappers so that the number of
 // wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
 // call to off().
-function captureCallback(
+function captureCallback<T>(
   nodeFire: NodeFire,
   eventType: admin.database.EventType,
-  callback: CapturableCallback,
+  callback: CapturableCallback<T>,
 ): (a: admin.database.DataSnapshot, b?: string) => any {
   const key = eventType + '::' + nodeFire.toString();
   callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || {};
@@ -812,8 +840,9 @@ function captureCallback(
   return nodeFireCallback;
 }
 
-function popCallback(
-  nodeFire: NodeFire, eventType: admin.database.EventType | undefined, callback: CapturableCallback
+function popCallback<T>(
+  nodeFire: NodeFire, eventType: admin.database.EventType | undefined,
+  callback: CapturableCallback<T>
 ): NodeFireCallback {
   const key = eventType + '::' + nodeFire.toString();
   return callback.$nodeFireCallbacks![key].pop();
@@ -881,11 +910,11 @@ function trimCache(ref) {
   });
 }
 
-function getNormalValue(snap: admin.database.DataSnapshot): Value {
-  return getNormalRawValue(snap.val());
+function getNormalValue<T>(snap: admin.database.DataSnapshot): ReadValue<T> | null {
+  return getNormalRawValue<T>(snap.val());
 }
 
-function getNormalRawValue(value: any): Value {
+function getNormalRawValue<T>(value: T): ReadValue<T> {
   if (_.isArray(value)) {
     const normalValue = {};
     _.forEach(value, (item, key) => {
@@ -893,13 +922,13 @@ function getNormalRawValue(value: any): Value {
         normalValue[key] = getNormalRawValue(item);
       }
     });
-    value = normalValue;
+    value = normalValue as T;
   } else if (_.isObject(value)) {
     _.forEach(value, (item, key) => {
       value[key] = getNormalRawValue(item);
     });
   }
-  return value;
+  return value as ReadValue<T>;
 }
 
 function invoke(op, options: {timeout?: number} = {}, fn) {
@@ -961,3 +990,125 @@ function handleError(error, op, callback) {
     return callback(error);
   });
 }
+
+
+/** Split "a/b/c" -> ["a","b","c"] */
+type Split<S extends string> =
+  S extends `${infer A}/${infer B}` ? (A extends '' ? Split<B> : [A, ...Split<B>]) :
+  S extends '' ? [] :
+  [S];
+
+/** Normalize a single segment:
+ *  ":foo" -> "$"
+ *  "{foo.bar}" -> "$"
+ */
+type NormSeg<S extends string> =
+  S extends `:${string}` ? '$' :
+  S extends `{${string}}` ? '$' :
+  S;
+
+/** Map normalization across segments */
+type NormalizeParts<P extends readonly string[]> =
+  P extends [infer H extends string, ...infer R extends string[]] ?
+    [NormSeg<H>, ...NormalizeParts<R>] : [];
+
+/** Resolve a (normalized) path against a nested schema */
+type Resolve<T, Parts extends readonly string[]> =
+  Parts extends [infer H extends string, ...infer R extends string[]] ?
+    (H extends keyof NonNullable<T> ? Resolve<NonNullable<T>[H], R> : never) : T;
+
+
+/** Final: resolve Path from Root */
+type DataTypeFrom<Root, Path extends string> = Resolve<Root, NormalizeParts<Split<Path>>>;
+
+/** Branded error type */
+declare const PATH_ERROR_BRAND: unique symbol;
+type PathError<Message extends string> = {
+  readonly [PATH_ERROR_BRAND]: Message;
+};
+
+/** Show normalized parts in error messages (as "a/b/$/c") */
+type JoinParts<P extends readonly string[]> =
+  P extends [] ? '' :
+  P extends [infer H extends string] ? H :
+  P extends [infer H extends string, ...infer R extends string[]] ? `${H}/${JoinParts<R>}` :
+  string;
+
+/** Turn a failed lookup into a branded error */
+type BrandedLookup<Root, P extends string> =
+  P extends `/${string}` ?
+    PathError<`Path must not start with "/": "${P}"`> :
+  [DataTypeFrom<Root, P>] extends [never] ?
+    PathError<`Unknown path: "${P}" (normalized: "${JoinParts<NormalizeParts<Split<P>>>}")`> :
+    DataTypeFrom<Root, P>;
+
+/** Restrict literal path arguments while leaving widened strings alone */
+type PathInput<Root, P extends string> =
+  string extends P ? P :
+  P extends any ? (
+    P extends `/${string}` ?
+      PathError<`Path must not start with "/": "${P}"`> :
+    [DataTypeFrom<Root, P>] extends [never] ?
+      PathError<`Unknown path: "${P}" (normalized: "${JoinParts<NormalizeParts<Split<P>>>}")`> :
+      P
+  ) :
+  never;
+
+type ReadRootWithInfo<Root> =
+  Root extends object ?
+    Omit<Root, '.info'> & {'.info'?: Info} :
+    Root;
+
+type ReadResultFor<Root, P extends string> = ResultFor<ReadRootWithInfo<Root>, P>;
+type ReadPathInput<Root, P extends string> = PathInput<ReadRootWithInfo<Root>, P>;
+
+type ResultFor<Root, P extends string> =
+  string extends P ?
+    // If P is a widened string (i.e., just `string`), allow and return unknown
+    unknown :
+    // If P is a literal (or union of literals), be strict and use branded error on failure
+    BrandedLookup<Root, P>;
+
+type WriteSpecialRule<
+  KeyPattern extends string = string,
+  BaseType = unknown,
+  SpecialValue = unknown
+> = readonly [keyPattern: KeyPattern, baseType: BaseType, specialValue: SpecialValue];
+
+type RuleSpecialForKey<
+  T, Key extends string,
+  Rules extends readonly WriteSpecialRule<any, any, any>[]
+> =
+  Rules extends readonly [
+    infer Head extends WriteSpecialRule<any, any, any>,
+    ...infer Tail extends readonly WriteSpecialRule<any, any, any>[]
+  ] ?
+  Head extends WriteSpecialRule<infer Pattern, infer BaseType, infer SpecialValue> ?
+  (
+    Key extends Pattern ?
+    ([Extract<T, BaseType>] extends [never] ? never : SpecialValue) :
+    never
+  ) | RuleSpecialForKey<T, Key, Tail> :
+  RuleSpecialForKey<T, Key, Tail> :
+  never;
+
+type NoUndefined<T> = Exclude<T, undefined>;
+
+type WriteShape<
+  T,
+  Rules extends readonly WriteSpecialRule<any, any, any>[] = []
+> =
+  NoUndefined<T> extends readonly (infer U)[] ?
+  ReadonlyArray<WriteShape<NoUndefined<U>, Rules> | null> :
+  T extends object ? {
+    [K in keyof T]:
+    K extends string ?
+    WriteShape<NoUndefined<T[K]> | RuleSpecialForKey<NoUndefined<T[K]>, K, Rules>, Rules> | null :
+    WriteShape<NoUndefined<T[K]>, Rules> | null;
+  } :
+  NoUndefined<T>;
+
+type PushValue<T> = NonNullable<T> extends {[key: string]: infer Child} ? Child : T;
+type StrictPartial<T> = {[K in keyof T]?: NoUndefined<T[K]>};
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+type UpdateShape<T> = StrictPartial<T> & {[path: string]: {} | null};
