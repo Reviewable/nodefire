@@ -51,6 +51,27 @@ co(
 );
 ```
 
+## TypeScript write placeholders
+
+`NodeFire` supports separate read and write type shapes.  The optional second generic parameter
+defines special write-value patterns, and defaults to none.
+
+Each pattern is `[keyPattern, baseType, specialValue]`, where `specialValue` is allowed for keys
+matching `keyPattern` when the field includes `baseType`.
+All nested write properties also accept `null` to support Firebase delete semantics.
+
+```ts
+import NodeFire from 'nodefire';
+
+type CounterIncrement = {'.sv': {increment: number}};
+type WritePatterns = [
+  [`${string}timestamp`, number, {'.sv': string}],
+  [`${string}Count`, number, CounterIncrement]
+];
+
+const db = new NodeFire<FirebaseData, WritePatterns>(admin.database().ref());
+```
+
 ## API
 
 This is reproduced from the source code, which is authoritative.
