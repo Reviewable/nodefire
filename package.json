@@ -10,9 +10,11 @@
   "engines": {
     "node": ">=8.0"
   },
-  "packageManager": "yarn@1.22.22",
+  "packageManager": "yarn@4.13.0",
   "scripts": {
-    "update": "yarn upgrade-interactive --latest",
+    "update": "yarn up -R '*' && yarn dedupe --strategy highest",
+    "latest": "yarn npm-check-updates -i -m --packageManager yarn --install never && yarn install",
+    "upgrade": "reviewable-upgrade",
     "lint": "eslint src/*.ts",
     "build": "tsc",
     "prepublish": "tsc"
@@ -40,6 +42,7 @@
   "devDependencies": {
     "@types/lodash": "^4.14.191",
     "@types/safe-timers": "^1.1.0",
+    "npm-check-updates": "^20.0.0",
     "reviewable-configs": "Reviewable/reviewable-configs",
     "typescript": "^5.3.3"
   }
