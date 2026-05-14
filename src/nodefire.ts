@@ -4,7 +4,6 @@ import _ from 'lodash';
 import {LRUCache} from 'lru-cache';
 import firebaseChildrenKeys from 'firebase-childrenkeys';
 import {Simulator} from 'firefight';
-import {Agent} from 'http';
 
 export type InterceptOperationsCallback = (
   op: {ref: NodeFire, method: string, args: any[]},
@@ -605,12 +604,9 @@ export default class NodeFire<
    *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient
    *        errors (defaults to 1)
    *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
-   *   - agent: http.Agent
    * @return {Promise<string[]>} A promise that resolves to an array of key strings.
    */
-  childrenKeys(options: {
-    maxTries?: number, retryInterval?: number, agent?: Agent
-  }): Promise<string[]> {
+  childrenKeys(options: {maxTries?: number, retryInterval?: number}): Promise<string[]> {
     return this.$ref.ref.childrenKeys ?
       this.$ref.ref.childrenKeys(options) :
       firebaseChildrenKeys(this.$ref, options);
