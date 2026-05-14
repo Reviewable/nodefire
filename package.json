@@ -42,6 +42,7 @@
   "devDependencies": {
     "@types/lodash": "^4.14.191",
     "@types/safe-timers": "^1.1.0",
+    "eslint": "^9.39.1",
     "npm-check-updates": "^20.0.0",
     "reviewable-configs": "Reviewable/reviewable-configs",
     "typescript": "^5.3.3"
