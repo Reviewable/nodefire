@@ -1,4 +1,6 @@
-import admin from 'firebase-admin';
+import {
+  enableLogging, Database, DataSnapshot, EventType, Query, Reference
+} from 'firebase-admin/database';
 import {setTimeout, Timeout} from 'safe-timers';
 import _ from 'lodash';
 import {LRUCache} from 'lru-cache';
@@ -37,11 +39,12 @@ export interface NodeFireError extends Error {
 
 declare module '@firebase/database-types' {
   interface Reference {
-    // Added to admin.database.Reference by firebaseChildrenKeys
+    // Added to Reference by firecrypt; use instead of the raw firebaseChildrenKeys call when
+    // present.
     childrenKeys?: (options: any) => Promise<string[]>;
 
     // Not documented in firebase-admin, so TypeScript thinks it's not there (but it is).
-    database: admin.database.Database;
+    database: Database;
   }
 }
 
@@ -65,7 +68,7 @@ export default class NodeFire<
    * Flag that indicates whether to log transactions and the number of tries needed.
    */
   static LOG_TRANSACTIONS = false;
-  $ref: admin.database.Reference | admin.database.Query;
+  $ref: Reference | Query;
   $scope: Scope;
   private _path?: string;
 
@@ -75,7 +78,7 @@ export default class NodeFire<
    * @param ref A fully authenticated Firebase Admin reference or query.
    * @param scope Optional dictionary that will be used for interpolating paths.
    */
-  constructor(ref: admin.database.Reference | admin.database.Query, scope?: Scope) {
+  constructor(ref: Reference | Query, scope?: Scope) {
     if (!_.isFunction(ref?.ref?.transaction)) {
       throw new Error(
         `Expected first argument passed to NodeFire constructor to be a Firebase Database reference,
@@ -103,10 +106,10 @@ export default class NodeFire<
 
   /**
    * Returns the database instance corresponding to this reference.
-   * @return {admin.database.Database} The database instance corresponding to this reference.
+   * @return {Database} The database instance corresponding to this reference.
    */
-  get database(): admin.database.Database {
-    return this.$ref.ref.database;
+  get database(): Database {
+    return this.$ref.ref.database as Database;
   }
 
   /**
@@ -558,7 +561,7 @@ export default class NodeFire<
    * @param context
    */
   on(
-    eventType: admin.database.EventType,
+    eventType: EventType,
     callback: (a: Snapshot<Root>, b?: string) => any,
     cancelCallback?: ((a: Error) => any), context?: object
   ): (a: Snapshot<Root>, b?: string) => any {
@@ -572,7 +575,7 @@ export default class NodeFire<
    * Unregisters a listener.  Works the same as the Firebase method.
    */
   off(
-    eventType?: admin.database.EventType,
+    eventType?: EventType,
     callback?: (a: Snapshot<Root>, b?: string) => any,
     context?: object
   ): void {
@@ -617,7 +620,7 @@ export default class NodeFire<
    * @param {boolean} enable Whether to enable or disable logging.
    */
   static enableFirebaseLogging(enable: boolean): void {
-    admin.database.enableLogging(enable);
+    enableLogging(enable);
   }
 
   /**
@@ -762,9 +765,9 @@ export default class NodeFire<
   refining scope.
  */
 export class Snapshot<Root> {
-  $snap: admin.database.DataSnapshot;
+  $snap: DataSnapshot;
   $nodeFire: NodeFire;
-  constructor(snap: admin.database.DataSnapshot, nodeFire: NodeFire) {
+  constructor(snap: DataSnapshot, nodeFire: NodeFire) {
     this.$snap = snap;
     this.$nodeFire = nodeFire;
   }
@@ -822,9 +825,9 @@ type CapturableCallback<T> =
 // call to off().
 function captureCallback<T>(
   nodeFire: NodeFire,
-  eventType: admin.database.EventType,
+  eventType: EventType,
   callback: CapturableCallback<T>,
-): (a: admin.database.DataSnapshot, b?: string) => any {
+): (a: DataSnapshot, b?: string) => any {
   const key = eventType + '::' + nodeFire.toString();
   callback.$nodeFireCallbacks = callback.$nodeFireCallbacks || {};
   callback.$nodeFireCallbacks[key] = callback.$nodeFireCallbacks[key] || [];
@@ -837,7 +840,7 @@ function captureCallback<T>(
 }
 
 function popCallback<T>(
-  nodeFire: NodeFire, eventType: admin.database.EventType | undefined,
+  nodeFire: NodeFire, eventType: EventType | undefined,
   callback: CapturableCallback<T>
 ): NodeFireCallback {
   const key = eventType + '::' + nodeFire.toString();
@@ -906,7 +909,7 @@ function trimCache(ref) {
   });
 }
 
-function getNormalValue<T>(snap: admin.database.DataSnapshot): ReadValue<T> | null {
+function getNormalValue<T>(snap: DataSnapshot): ReadValue<T> | null {
   return getNormalRawValue<T>(snap.val());
 }
 
@@ -980,7 +983,7 @@ function handleError(error, op, callback) {
   if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
   const method = op.method === 'get' ? 'once' : op.method;
   const authOverride =
-    ((op.ref as admin.database.Reference).database.app.options as any).databaseAuthVariableOverride;
+    ((op.ref as Reference).database.app.options as any).databaseAuthVariableOverride;
   return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
     error.firebase.permissionTrace = explanation;
     return callback(error);
