@@ -631,7 +631,7 @@ export default class NodeFire<
    * @param {string} legacySecret A legacy database secret, needed to access the old API that allows
    *     simulating request with debug feedback.  Pass a falsy value to turn off debugging.
    */
-  enablePermissionDebugging(legacySecret: string): void {
+  enablePermissionDebugging(legacySecret: string | null): void {
     if (legacySecret) {
       if (!simulators[this.database.app.name]) {
         const authOverride = (this.database.app.options as any).databaseAuthVariableOverride;
@@ -964,9 +964,10 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
 function handleError(error, op, callback) {
   const args: any[] = _.map(
     op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
+  const auth = ((op.ref as Reference).database.app.options as any).databaseAuthVariableOverride;
 
   error.firebase = {
-    ref: op.ref.toString(), method: op.method, args,
+    ref: op.ref.toString(), method: op.method, args, auth,
     code: _.toLower(error.code || error.message) || undefined
   };
   if (error.message === 'timeout' && error.timeout) {
@@ -982,9 +983,7 @@ function handleError(error, op, callback) {
   const simulator = simulators[op.ref.database.app.name];
   if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
   const method = op.method === 'get' ? 'once' : op.method;
-  const authOverride =
-    ((op.ref as Reference).database.app.options as any).databaseAuthVariableOverride;
-  return simulator.auth(authOverride)[method](op.ref, op.args[0]).then(explanation => {
+  return simulator.auth(auth)[method](op.ref, op.args[0]).then(explanation => {
     error.firebase.permissionTrace = explanation;
     return callback(error);
   });
