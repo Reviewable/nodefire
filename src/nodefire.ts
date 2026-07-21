@@ -7,8 +7,20 @@ import {LRUCache} from 'lru-cache';
 import firebaseChildrenKeys from 'firebase-childrenkeys';
 import {Simulator} from 'firefight';
 
+// Give conditional types a single inference site for NodeFire's public generic parameters.
+declare const NODE_FIRE_TYPES: unique symbol;
+interface NodeFireTypeCarrier {
+  readonly [NODE_FIRE_TYPES]: readonly [
+    unknown,
+    readonly WriteSpecialRule<any, any, any>[],
+    unknown
+  ];
+}
+
+type AnyNodeFire = NodeFire<any, any, any>;
+
 export type InterceptOperationsCallback = (
-  op: {ref: NodeFire, method: string, args: any[]},
+  op: {ref: AnyNodeFire, method: string, args: any[]},
   options: any
 ) => Promise<void> | void;
 
@@ -23,7 +35,7 @@ export type NormalizedValue<T> =
   T;
 export type ReadValue<T> = Exclude<NormalizedValue<T>, undefined>;
 
-let cache: LRUCache<string, NodeFire> | null;
+let cache: LRUCache<string, AnyNodeFire> | null;
 let cacheHits = 0, cacheMisses = 0;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors: InterceptOperationsCallback[] = [];
@@ -61,9 +73,12 @@ declare module '@firebase/database-types' {
  */
 export default class NodeFire<
   Root = any,
-  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[] = [],
-  WriteRoot = WriteShape<Root, WriteSpecialRules>
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[] =
+  IsAny<Root> extends true ? any : [],
+  WriteRoot = IsAny<Root> extends true ? any : WriteShape<Root, WriteSpecialRules>
 > {
+  declare readonly [NODE_FIRE_TYPES]: readonly [Root, WriteSpecialRules, WriteRoot];
+
   /**
    * Flag that indicates whether to log transactions and the number of tries needed.
    */
@@ -136,18 +151,26 @@ export default class NodeFire<
    * Returns a NodeFire reference at the same location as this query or reference.
    * @return A NodeFire reference at the same location as this query or reference.
    */
-  get ref(): NodeFire<Root, WriteSpecialRules, WriteRoot> {
-    if (this.$ref.isEqual(this.$ref.ref)) return this;
-    return new NodeFire(this.$ref.ref, this.$scope);
+  get ref(): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    if (this.$ref.isEqual(this.$ref.ref)) {
+      return this as unknown as SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>;
+    }
+    return new NodeFire(this.$ref.ref, this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
   /**
    * Returns a NodeFire reference to the root of the database.
    * @return {NodeFire} The root reference of the database.
    */
-  get root(): NodeFire<Root, WriteSpecialRules, WriteRoot> {
-    if (this.$ref.isEqual(this.$ref.ref.root)) return this;
-    return new NodeFire(this.$ref.ref.root, this.$scope);
+  get root(): NoInfer<RootNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    if (this.$ref.isEqual(this.$ref.ref.root)) {
+      return this as unknown as RootNodeFire<this, Root, WriteSpecialRules, WriteRoot>;
+    }
+    return new NodeFire(this.$ref.ref.root, this.$scope) as RootNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
   /**
@@ -155,9 +178,12 @@ export default class NodeFire<
    * reference is `null`.
    * @return {NodeFire|null} The parent location of this reference.
    */
-  get parent(): NodeFire<Root, WriteSpecialRules, WriteRoot> | null {
+  get parent(): NoInfer<ParentNodeFire<this, Root, WriteSpecialRules, WriteRoot>> | null {
     if (this.$ref.ref.parent === null) return null;
-    return new NodeFire(this.$ref.ref.parent, this.$scope);
+    // The type-only Parents chain mirrors the reference path built by child() and push().
+    return new NodeFire(this.$ref.ref.parent, this.$scope) as ParentNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
   /**
@@ -218,7 +244,7 @@ export default class NodeFire<
    * @param {Nodefire} otherRef Another NodeFire instance against which to compare.
    * @return {boolean}
    */
-  isEqual(otherRef: NodeFire): boolean {
+  isEqual(otherRef: AnyNodeFire): boolean {
     return this.$ref.isEqual(otherRef.$ref);
   }
 
@@ -236,8 +262,10 @@ export default class NodeFire<
    *     precedence over) the one carried by this NodeFire object.
    * @return A new NodeFire object with the same reference and new scope.
    */
-  scope(scope: Scope): NodeFire<Root, WriteSpecialRules, WriteRoot> {
-    return new NodeFire(this.$ref, _.assign(_.clone(this.$scope), scope));
+  scope(scope: Scope): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(
+      this.$ref, _.assign(_.clone(this.$scope), scope)
+    ) as SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>;
   }
 
   /**
@@ -250,12 +278,12 @@ export default class NodeFire<
    * @return {NodeFire} A new NodeFire object on the child reference, and with the augmented scope.
    */
   child<P extends string>(path: P & ReadPathInput<Root, P>, scope?: Scope):
-    NodeFire<ReadResultFor<Root, P>, WriteSpecialRules, ResultFor<WriteRoot, P>>;
+    NoInfer<ChildNodeFireOf<this, P>>;
 
   child<TypePaths extends string>(path: string, scope?: Scope):
-    NodeFire<ReadResultFor<Root, TypePaths>, WriteSpecialRules, ResultFor<WriteRoot, TypePaths>>;
+    NoInfer<ChildNodeFireOf<this, TypePaths>>;
 
-  child(path: string, scope: Scope = {}): NodeFire {
+  child(path: string, scope: Scope = {}): AnyNodeFire {
     const child = this.scope(scope);
     return new NodeFire(this.$ref.ref.child(child.interpolate(path)), child.$scope);
   }
@@ -268,11 +296,9 @@ export default class NodeFire<
    *     interpolated and must already be escaped, if necessary.
    * @returns {NodeFire} A new NodeFire object on the child reference.
    */
-  childRaw<P extends string>(
-    path: P & ReadPathInput<Root, P>
-  ): NodeFire<ReadResultFor<Root, P>, WriteSpecialRules, ResultFor<WriteRoot, P>>;
+  childRaw<P extends string>(path: P & ReadPathInput<Root, P>): NoInfer<ChildNodeFireOf<this, P>>;
 
-  childRaw(path: string): NodeFire {
+  childRaw(path: string): AnyNodeFire {
     return new NodeFire(this.$ref.ref.child(path as string), _.clone(this.$scope));
   }
 
@@ -378,13 +404,21 @@ export default class NodeFire<
    * @return A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
-  push(value: PushValue<WriteRoot> | null, options?: { timeout?: number }): Promise<NodeFire> {
+  push(
+    value: PushValue<WriteRoot> | null, options?: { timeout?: number }
+  ): Promise<NoInfer<PushedNodeFire<this, Root, WriteSpecialRules, WriteRoot>>> {
     if (_.isNil(value)) {
-      return Promise.resolve(new NodeFire(this.$ref.ref.push(), this.$scope));
+      return Promise.resolve(
+        new NodeFire(this.$ref.ref.push(), this.$scope) as unknown as PushedNodeFire<
+          this, Root, WriteSpecialRules, WriteRoot
+        >
+      );
     }
     return invoke({ref: this, method: 'push', args: [value]}, options, (opts: any) => {
       const ref = this.$ref.ref.push(value);
-      return ref.then(() => new NodeFire(ref, this.$scope));
+      return ref.then(() => new NodeFire(ref, this.$scope) as unknown as PushedNodeFire<
+        this, Root, WriteSpecialRules, WriteRoot
+      >);
     });
   }
 
@@ -725,36 +759,64 @@ export default class NodeFire<
     });
   }
 
-  orderByChild(path: string): NodeFire {
-    return new NodeFire(this.$ref.orderByChild(path), this.$scope);
+  orderByChild(
+    path: string
+  ): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(this.$ref.orderByChild(path), this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
-  equalTo(value: PrimitiveValue): NodeFire {
-    return new NodeFire(this.$ref.equalTo(value), this.$scope);
+  equalTo(
+    value: PrimitiveValue
+  ): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(this.$ref.equalTo(value), this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
-  limitToFirst(limit: number): NodeFire {
-    return new NodeFire(this.$ref.limitToFirst(limit), this.$scope);
+  limitToFirst(
+    limit: number
+  ): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(this.$ref.limitToFirst(limit), this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
-  limitToLast(limit: number): NodeFire {
-    return new NodeFire(this.$ref.limitToLast(limit), this.$scope);
+  limitToLast(
+    limit: number
+  ): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(this.$ref.limitToLast(limit), this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
-  startAt(value: PrimitiveValue, key?: string): NodeFire {
-    return new NodeFire(this.$ref.startAt(value, key), this.$scope);
+  startAt(
+    value: PrimitiveValue, key?: string
+  ): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(this.$ref.startAt(value, key), this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
-  endAt(value: PrimitiveValue, key?: string): NodeFire {
-    return new NodeFire(this.$ref.endAt(value, key), this.$scope);
+  endAt(
+    value: PrimitiveValue, key?: string
+  ): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(this.$ref.endAt(value, key), this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
-  orderByKey(): NodeFire {
-    return new NodeFire(this.$ref.orderByKey(), this.$scope);
+  orderByKey(): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(this.$ref.orderByKey(), this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 
-  orderByValue(): NodeFire {
-    return new NodeFire(this.$ref.orderByValue(), this.$scope);
+  orderByValue(): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+    return new NodeFire(this.$ref.orderByValue(), this.$scope) as SameNodeFire<
+      this, Root, WriteSpecialRules, WriteRoot
+    >;
   }
 }
 
@@ -766,8 +828,8 @@ export default class NodeFire<
  */
 export class Snapshot<Root> {
   $snap: DataSnapshot;
-  $nodeFire: NodeFire;
-  constructor(snap: DataSnapshot, nodeFire: NodeFire) {
+  $nodeFire: AnyNodeFire;
+  constructor(snap: DataSnapshot, nodeFire: AnyNodeFire) {
     this.$snap = snap;
     this.$nodeFire = nodeFire;
   }
@@ -776,7 +838,7 @@ export class Snapshot<Root> {
     return this.$snap.key;
   }
 
-  get ref(): NodeFire {
+  get ref(): AnyNodeFire {
     return new NodeFire(this.$snap.ref, this.$nodeFire.$scope);
   }
 
@@ -824,7 +886,7 @@ type CapturableCallback<T> =
 // wrappers is equal to the number of on()s for that callback, and we can safely pop one with each
 // call to off().
 function captureCallback<T>(
-  nodeFire: NodeFire,
+  nodeFire: AnyNodeFire,
   eventType: EventType,
   callback: CapturableCallback<T>,
 ): (a: DataSnapshot, b?: string) => any {
@@ -840,7 +902,7 @@ function captureCallback<T>(
 }
 
 function popCallback<T>(
-  nodeFire: NodeFire, eventType: EventType | undefined,
+  nodeFire: AnyNodeFire, eventType: EventType | undefined,
   callback: CapturableCallback<T>
 ): NodeFireCallback {
   const key = eventType + '::' + nodeFire.toString();
@@ -866,7 +928,7 @@ function delegateSnapshot(method) {
   };
 }
 
-function wrapReject(nodefire: NodeFire, method, value, reject?) {
+function wrapReject(nodefire: AnyNodeFire, method, value, reject?) {
   let hasValue = true;
   if (!reject) {
     reject = value;
@@ -1066,6 +1128,181 @@ type ResultFor<Root, P extends string> =
     unknown :
     // If P is a literal (or union of literals), be strict and use branded error on failure
     BrandedLookup<Root, P>;
+
+interface UnknownParent {
+  readonly unknownParent: true;
+}
+type NodeFireParents =
+  null |
+  UnknownParent |
+  readonly [readRoot: unknown, writeRoot: unknown, parents: NodeFireParents];
+
+type IsAny<T> = 0 extends (1 & T) ? true : false;
+type DefaultParents<Root> = IsAny<Root> extends true ? UnknownParent : null;
+
+declare const NAVIGATION: unique symbol;
+interface NodeFireNavigation<
+  DatabaseRoot,
+  WriteDatabaseRoot,
+  Parents extends NodeFireParents
+> {
+  readonly [NAVIGATION]: readonly [DatabaseRoot, WriteDatabaseRoot, Parents];
+}
+
+type NavigatedNodeFire<
+  Root,
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[],
+  WriteRoot,
+  DatabaseRoot,
+  WriteDatabaseRoot,
+  Parents extends NodeFireParents
+> = NodeFire<Root, WriteSpecialRules, WriteRoot> &
+  NodeFireNavigation<DatabaseRoot, WriteDatabaseRoot, Parents>;
+
+type NavigationStateFor<This, Root, WriteRoot> =
+  This extends NodeFireNavigation<
+    infer DatabaseRoot,
+    infer WriteDatabaseRoot,
+    infer Parents
+  > ?
+    readonly [DatabaseRoot, WriteDatabaseRoot, Parents] :
+    readonly [Root, WriteRoot, DefaultParents<Root>];
+
+type SameNodeFire<
+  This,
+  Root,
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[],
+  WriteRoot
+> = This extends NodeFireNavigation<
+  infer DatabaseRoot,
+  infer WriteDatabaseRoot,
+  infer Parents
+> ?
+  NavigatedNodeFire<
+    Root, WriteSpecialRules, WriteRoot,
+    DatabaseRoot, WriteDatabaseRoot, Parents
+  > :
+  NodeFire<Root, WriteSpecialRules, WriteRoot>;
+
+type RootNodeFire<
+  This,
+  Root,
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[],
+  WriteRoot
+> = NavigationStateFor<This, Root, WriteRoot> extends readonly [
+  infer DatabaseRoot,
+  infer WriteDatabaseRoot,
+  NodeFireParents
+] ?
+  NavigatedNodeFire<
+    DatabaseRoot, WriteSpecialRules, WriteDatabaseRoot,
+    DatabaseRoot, WriteDatabaseRoot, null
+  > :
+  never;
+
+type ChildParents<
+  Root,
+  WriteRoot,
+  P extends string,
+  Parents extends NodeFireParents
+> = string extends P ?
+  UnknownParent :
+  BuildChildParents<Root, WriteRoot, NormalizeParts<Split<P>>, Parents>;
+
+type BuildChildParents<
+  Root,
+  WriteRoot,
+  Parts extends readonly string[],
+  Parents extends NodeFireParents
+> = Parts extends readonly [
+  infer Head extends string,
+  ...infer Tail extends string[]
+] ?
+  BuildChildParents<
+    ReadResultFor<Root, Head>, ResultFor<WriteRoot, Head>, Tail,
+    readonly [Root, WriteRoot, Parents]
+  > :
+  Parents;
+
+type ParentNodeFire<
+  This,
+  Root,
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[],
+  WriteRoot
+> = NavigationStateFor<This, Root, WriteRoot> extends readonly [
+  infer DatabaseRoot,
+  infer WriteDatabaseRoot,
+  infer Parents extends NodeFireParents
+] ?
+  ParentNodeFireFromState<
+    WriteSpecialRules, DatabaseRoot, WriteDatabaseRoot, Parents
+  > :
+  never;
+
+type ParentNodeFireFromState<
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[],
+  DatabaseRoot,
+  WriteDatabaseRoot,
+  Parents extends NodeFireParents
+> = Parents extends UnknownParent ?
+  NavigatedNodeFire<
+    unknown, WriteSpecialRules, unknown,
+    DatabaseRoot, WriteDatabaseRoot, UnknownParent
+  > :
+  Parents extends readonly [
+    infer ParentRoot,
+    infer ParentWriteRoot,
+    infer Grandparents extends NodeFireParents
+  ] ?
+  NavigatedNodeFire<
+    ParentRoot, WriteSpecialRules, ParentWriteRoot,
+    DatabaseRoot, WriteDatabaseRoot, Grandparents
+  > :
+  never;
+
+type ChildNodeFire<
+  This,
+  Root,
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[],
+  WriteRoot,
+  P extends string
+> = NavigationStateFor<This, Root, WriteRoot> extends readonly [
+  infer DatabaseRoot,
+  infer WriteDatabaseRoot,
+  infer Parents extends NodeFireParents
+] ?
+  NavigatedNodeFire<
+    ReadResultFor<Root, P>, WriteSpecialRules, ResultFor<WriteRoot, P>,
+    DatabaseRoot, WriteDatabaseRoot, ChildParents<Root, WriteRoot, P, Parents>
+  > :
+  never;
+
+export type ChildNodeFireOf<
+  This extends NodeFireTypeCarrier,
+  P extends string
+> = ChildNodeFire<
+  This,
+  This[typeof NODE_FIRE_TYPES][0],
+  This[typeof NODE_FIRE_TYPES][1],
+  This[typeof NODE_FIRE_TYPES][2],
+  P
+>;
+
+type PushedNodeFire<
+  This,
+  Root,
+  WriteSpecialRules extends readonly WriteSpecialRule<any, any, any>[],
+  WriteRoot
+> = NavigationStateFor<This, Root, WriteRoot> extends readonly [
+  infer DatabaseRoot,
+  infer WriteDatabaseRoot,
+  infer Parents extends NodeFireParents
+] ?
+  NavigatedNodeFire<
+    PushValue<Root>, WriteSpecialRules, PushValue<WriteRoot>,
+    DatabaseRoot, WriteDatabaseRoot, readonly [Root, WriteRoot, Parents]
+  > :
+  never;
 
 type WriteSpecialRule<
   KeyPattern extends string = string,

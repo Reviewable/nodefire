@@ -72,6 +72,10 @@ type WritePatterns = [
 const db = new NodeFire<FirebaseData, WritePatterns>(admin.database().ref());
 ```
 
+Typed navigation retains the database schema: `child()` specializes the value and write types,
+`parent` restores the immediate parent types, and `root` restores the database-root types.  A
+widened runtime child path has an `unknown` value and parent type, while its `root` remains typed.
+
 ## API
 
 This is reproduced from the source code, which is authoritative.
