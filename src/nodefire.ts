@@ -351,10 +351,12 @@ export default class NodeFire<
     if (!cache) return;
     if (!this.$ref.isEqual(this.$ref.ref)) return;  // don't cache queries
     const keyPrefix = getCacheKeyPrefix(this);
+    const key = keyPrefix + this.path;
     let isHit = false;
     let cachedPath = this.path;
     while (true) {
-      if (cache.get(keyPrefix + cachedPath)) {
+      // Probe ancestors without changing their LRU recency.
+      if (cache.has(keyPrefix + cachedPath)) {
         cacheHits++;
         isHit = true;
         break;
@@ -362,9 +364,12 @@ export default class NodeFire<
       if (cachedPath === '/') break;
       cachedPath = cachedPath.slice(0, cachedPath.lastIndexOf('/')) || '/';
     }
-    if (!isHit) cacheMisses++;
-    else if (cachedPath === this.path) return;
-    const key = keyPrefix + this.path;
+    if (!isHit) {
+      cacheMisses++;
+    } else if (cachedPath === this.path) {
+      cache.get(key);  // refresh recency without adding another listener
+      return;
+    }
     cache.set(key, this);
     this.$ref.on('value', noopCallback, () => {
       if (cache) cache.delete(key);
