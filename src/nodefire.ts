@@ -42,7 +42,7 @@ export interface CacheStats {
   maxSize: number;
   /** The number of cache attempts satisfied by the requested path or one of its ancestors. */
   hits: number;
-  /** The number of cache attempts that added the requested path to the cache. */
+  /** The number of cache attempts with no cached requested path or ancestor. */
   misses: number;
   /** `hits / (hits + misses)`, or zero if there have been no attempts. */
   hitRate: number;
@@ -350,17 +350,20 @@ export default class NodeFire<
   cache(): void {
     if (!cache) return;
     if (!this.$ref.isEqual(this.$ref.ref)) return;  // don't cache queries
-    const keyPrefix = this.database.app.name + '/';
+    const keyPrefix = getCacheKeyPrefix(this);
+    let isHit = false;
     let cachedPath = this.path;
     while (true) {
       if (cache.get(keyPrefix + cachedPath)) {
         cacheHits++;
-        return;
+        isHit = true;
+        break;
       }
       if (cachedPath === '/') break;
       cachedPath = cachedPath.slice(0, cachedPath.lastIndexOf('/')) || '/';
     }
-    cacheMisses++;
+    if (!isHit) cacheMisses++;
+    if (isHit && cachedPath === this.path) return;
     const key = keyPrefix + this.path;
     cache.set(key, this);
     this.$ref.on('value', noopCallback, () => {
@@ -374,7 +377,7 @@ export default class NodeFire<
    */
   uncache(): undefined | boolean {
     if (!cache) return;
-    const key = this.database.app.name + '/' + this.path;
+    const key = getCacheKeyPrefix(this) + this.path;
     if (!cache.has(key)) return false;
     cache.delete(key);
     return true;
@@ -742,7 +745,7 @@ export default class NodeFire<
    * @deprecated Use `getCacheStats().count` instead.
    */
   static getCacheCount(): number {
-    return this.getCacheStats().count;
+    return NodeFire.getCacheStats().count;
   }
 
   /**
@@ -765,7 +768,7 @@ export default class NodeFire<
    * @deprecated Use `getCacheStats().hitRate` instead.
    */
   static getCacheHitRate(): number {
-    return this.getCacheStats().hitRate;
+    return NodeFire.getCacheStats().hitRate;
   }
 
   /**
@@ -780,7 +783,7 @@ export default class NodeFire<
    * @deprecated Use `resetCacheStats()` instead.
    */
   static resetCacheHitRate(): void {
-    this.resetCacheStats();
+    NodeFire.resetCacheStats();
   }
 
   /**
@@ -988,6 +991,10 @@ function wrapReject(nodefire: AnyNodeFire, method, value, reject?) {
 }
 
 function noopCallback() {/* empty */}
+
+function getCacheKeyPrefix(ref: AnyNodeFire): string {
+  return ref.database.app.name + '/' + ref.$ref.ref.root.toString();
+}
 
 function trackTimeOffset(ref, recover = false) {
   const appName = ref.database.app.name;
