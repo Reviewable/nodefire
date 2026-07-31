@@ -1007,9 +1007,9 @@ function trackTimeOffset(ref, recover = false) {
 }
 
 function trackDisconnect(ref, recover = false) {
-  const appName = ref.database.app.name;
-  if (!recover && serverDisconnects[appName]) return;
-  serverDisconnects[appName] = true;
+  const databaseKey = getCacheKeyPrefix(ref);
+  if (!recover && serverDisconnects[databaseKey]) return;
+  serverDisconnects[databaseKey] = true;
   ref.root.child('.info/connected').on('value', snap => {
     if (!snap.val()) trimCache(ref);
   }, _.bind(trackDisconnect, ref, true));
@@ -1017,7 +1017,7 @@ function trackDisconnect(ref, recover = false) {
 
 function trimCache(ref) {
   if (!cache) return;
-  const prefix = ref.database.app.name + '/';
+  const prefix = getCacheKeyPrefix(ref);
   // eslint-disable-next-line lodash/prefer-lodash-method
   cache.forEach((value, key) => {
     if (_.startsWith(key, prefix)) cache!.delete(key);

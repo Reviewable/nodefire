@@ -11,11 +11,13 @@ class FakeReference {
     path = '/',
     appName = `cache-test-${++appCounter}`,
     databaseName = appName,
-    valueListenerAdds = new Map()
+    valueListenerAdds = new Map(),
+    connectedCallbacks = []
   ) {
     this.path = path;
     this.databaseName = databaseName;
     this.valueListenerAdds = valueListenerAdds;
+    this.connectedCallbacks = connectedCallbacks;
     this.database = {app: {name: appName}};
   }
 
@@ -27,7 +29,8 @@ class FakeReference {
     if (this.path === '/') return null;
     const path = this.path.slice(0, this.path.lastIndexOf('/')) || '/';
     return new FakeReference(
-      path, this.database.app.name, this.databaseName, this.valueListenerAdds
+      path, this.database.app.name, this.databaseName,
+      this.valueListenerAdds, this.connectedCallbacks
     );
   }
 
@@ -37,14 +40,16 @@ class FakeReference {
 
   get root() {
     return new FakeReference(
-      '/', this.database.app.name, this.databaseName, this.valueListenerAdds
+      '/', this.database.app.name, this.databaseName,
+      this.valueListenerAdds, this.connectedCallbacks
     );
   }
 
   child(childPath) {
     const path = this.path === '/' ? `/${childPath}` : `${this.path}/${childPath}`;
     return new FakeReference(
-      path, this.database.app.name, this.databaseName, this.valueListenerAdds
+      path, this.database.app.name, this.databaseName,
+      this.valueListenerAdds, this.connectedCallbacks
     );
   }
 
@@ -68,9 +73,14 @@ class FakeReference {
       callback({val: () => 0});
     }
     if (this.path === '/.info/connected') {
+      this.connectedCallbacks.push(callback);
       // eslint-disable-next-line lodash/prefer-constant
       callback({val: () => true});
     }
+  }
+
+  emitConnected(value) {
+    for (const callback of this.connectedCallbacks) callback({val: () => value});
   }
 
   toString() {
@@ -215,4 +225,23 @@ test('does not refresh ancestor recency while checking for indirect hits', () =>
   assert.equal(ancestor.uncache(), false);
   assert.equal(other.uncache(), true);
   assert.equal(descendant.uncache(), true);
+});
+
+test('tracks disconnects and trims the cache per database instance', () => {
+  NodeFire.setCacheSize(10);
+  const firstReference = new FakeReference('/', 'disconnect-app', 'first-database');
+  const secondReference = new FakeReference('/', 'disconnect-app', 'second-database');
+  const first = new NodeFire(firstReference).childRaw('value');
+  const second = new NodeFire(secondReference).childRaw('value');
+
+  first.cache();
+  second.cache();
+  firstReference.emitConnected(false);
+
+  assert.equal(first.uncache(), false);
+  assert.equal(second.uncache(), true);
+
+  second.cache();
+  secondReference.emitConnected(false);
+  assert.equal(second.uncache(), false);
 });
