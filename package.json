@@ -15,9 +15,10 @@
     "update": "yarn up -R '*' && yarn dedupe --strategy highest",
     "latest": "yarn npm-check-updates -i -m --packageManager yarn --install never && yarn install",
     "upgrade": "reviewable-upgrade",
-    "lint": "eslint src/*.ts tests/*.ts",
+    "lint": "eslint src/*.ts tests/*.ts tests/*.mjs",
     "check-types": "tsc --noEmit --skipLibCheck && tsc --project tests/tsconfig.json --skipLibCheck",
     "build": "tsc",
+    "test": "yarn build && node --test tests/cache.mjs",
     "prepublish": "tsc"
   },
   "repository": "https://github.com/Reviewable/nodefire",
