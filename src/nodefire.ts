@@ -992,7 +992,7 @@ function wrapReject(nodefire: AnyNodeFire, method, value, reject?) {
 function noopCallback() {/* empty */}
 
 function getCacheKeyPrefix(ref: AnyNodeFire): string {
-  return ref.database.app.name + '/' + ref.$ref.ref.root.toString();
+  return ref.database.app.name + '\0' + ref.$ref.ref.root.toString() + '\0';
 }
 
 function trackTimeOffset(ref, recover = false) {

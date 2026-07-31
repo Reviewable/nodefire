@@ -12,10 +12,12 @@ class FakeReference {
     appName = `cache-test-${++appCounter}`,
     databaseName = appName,
     valueListenerAdds = new Map(),
-    connectedCallbacks = []
+    connectedCallbacks = [],
+    databaseRoot = `https://${databaseName}.test`
   ) {
     this.path = path;
     this.databaseName = databaseName;
+    this.databaseRoot = databaseRoot;
     this.valueListenerAdds = valueListenerAdds;
     this.connectedCallbacks = connectedCallbacks;
     this.database = {app: {name: appName}};
@@ -30,7 +32,7 @@ class FakeReference {
     const path = this.path.slice(0, this.path.lastIndexOf('/')) || '/';
     return new FakeReference(
       path, this.database.app.name, this.databaseName,
-      this.valueListenerAdds, this.connectedCallbacks
+      this.valueListenerAdds, this.connectedCallbacks, this.databaseRoot
     );
   }
 
@@ -41,7 +43,7 @@ class FakeReference {
   get root() {
     return new FakeReference(
       '/', this.database.app.name, this.databaseName,
-      this.valueListenerAdds, this.connectedCallbacks
+      this.valueListenerAdds, this.connectedCallbacks, this.databaseRoot
     );
   }
 
@@ -49,7 +51,7 @@ class FakeReference {
     const path = this.path === '/' ? `/${childPath}` : `${this.path}/${childPath}`;
     return new FakeReference(
       path, this.database.app.name, this.databaseName,
-      this.valueListenerAdds, this.connectedCallbacks
+      this.valueListenerAdds, this.connectedCallbacks, this.databaseRoot
     );
   }
 
@@ -57,6 +59,7 @@ class FakeReference {
     return (
       this.database.app.name === other.database.app.name &&
       this.databaseName === other.databaseName &&
+      this.databaseRoot === other.databaseRoot &&
       this.path === other.path
     );
   }
@@ -84,7 +87,7 @@ class FakeReference {
   }
 
   toString() {
-    return `https://${this.databaseName}.test${this.path}`;
+    return this.databaseRoot + this.path;
   }
 
   transaction() {/* The constructor only checks that this method exists. */}
@@ -244,4 +247,25 @@ test('tracks disconnects and trims the cache per database instance', () => {
   second.cache();
   secondReference.emitConnected(false);
   assert.equal(second.uncache(), false);
+});
+
+test('does not trim a database whose identity extends another database identity', () => {
+  NodeFire.setCacheSize(10);
+  const firstReference = new FakeReference(
+    '/', 'prefix-app', 'first-database', new Map(), [],
+    'https://emulator.test/?ns=foo'
+  );
+  const secondReference = new FakeReference(
+    '/', 'prefix-app', 'second-database', new Map(), [],
+    'https://emulator.test/?ns=foobar'
+  );
+  const first = new NodeFire(firstReference).childRaw('value');
+  const second = new NodeFire(secondReference).childRaw('value');
+
+  first.cache();
+  second.cache();
+  firstReference.emitConnected(false);
+
+  assert.equal(first.uncache(), false);
+  assert.equal(second.uncache(), true);
 });
