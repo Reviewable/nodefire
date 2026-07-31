@@ -363,7 +363,7 @@ export default class NodeFire<
       cachedPath = cachedPath.slice(0, cachedPath.lastIndexOf('/')) || '/';
     }
     if (!isHit) cacheMisses++;
-    if (isHit && cachedPath === this.path) return;
+    else if (cachedPath === this.path) return;
     const key = keyPrefix + this.path;
     cache.set(key, this);
     this.$ref.on('value', noopCallback, () => {
