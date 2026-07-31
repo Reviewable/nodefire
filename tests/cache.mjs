@@ -10,10 +10,12 @@ class FakeReference {
   constructor(
     path = '/',
     appName = `cache-test-${++appCounter}`,
-    databaseName = appName
+    databaseName = appName,
+    valueListenerAdds = new Map()
   ) {
     this.path = path;
     this.databaseName = databaseName;
+    this.valueListenerAdds = valueListenerAdds;
     this.database = {app: {name: appName}};
   }
 
@@ -24,7 +26,9 @@ class FakeReference {
   get parent() {
     if (this.path === '/') return null;
     const path = this.path.slice(0, this.path.lastIndexOf('/')) || '/';
-    return new FakeReference(path, this.database.app.name, this.databaseName);
+    return new FakeReference(
+      path, this.database.app.name, this.databaseName, this.valueListenerAdds
+    );
   }
 
   get ref() {
@@ -32,12 +36,16 @@ class FakeReference {
   }
 
   get root() {
-    return new FakeReference('/', this.database.app.name, this.databaseName);
+    return new FakeReference(
+      '/', this.database.app.name, this.databaseName, this.valueListenerAdds
+    );
   }
 
   child(childPath) {
     const path = this.path === '/' ? `/${childPath}` : `${this.path}/${childPath}`;
-    return new FakeReference(path, this.database.app.name, this.databaseName);
+    return new FakeReference(
+      path, this.database.app.name, this.databaseName, this.valueListenerAdds
+    );
   }
 
   isEqual(other) {
@@ -51,6 +59,10 @@ class FakeReference {
   off() {/* Nothing to detach in the fake reference. */}
 
   on(event, callback) {
+    // eslint-disable-next-line lodash/prefer-lodash-method
+    if (event === 'value' && !this.path.startsWith('/.info/')) {
+      this.valueListenerAdds.set(this.path, (this.valueListenerAdds.get(this.path) || 0) + 1);
+    }
     if (this.path === '/.info/serverTimeOffset') {
       // eslint-disable-next-line lodash/prefer-constant
       callback({val: () => 0});
@@ -170,4 +182,37 @@ test('keeps deprecated cache methods callable without a receiver', () => {
     misses: 0,
     hitRate: 0
   });
+});
+
+test('refreshes direct hits without adding duplicate value listeners', () => {
+  NodeFire.setCacheSize(2);
+  const reference = new FakeReference();
+  const root = new NodeFire(reference);
+  const first = root.childRaw('first');
+  const second = root.childRaw('second');
+
+  first.cache();
+  second.cache();
+  first.cache();
+  root.childRaw('third').cache();
+
+  assert.equal(reference.valueListenerAdds.get('/first'), 1);
+  assert.equal(second.uncache(), false);
+  assert.equal(first.uncache(), true);
+});
+
+test('does not refresh ancestor recency while checking for indirect hits', () => {
+  NodeFire.setCacheSize(2);
+  const root = new NodeFire(new FakeReference());
+  const ancestor = root.childRaw('parent');
+  const other = root.childRaw('other');
+  const descendant = root.childRaw('parent/child');
+
+  ancestor.cache();
+  other.cache();
+  descendant.cache();
+
+  assert.equal(ancestor.uncache(), false);
+  assert.equal(other.uncache(), true);
+  assert.equal(descendant.uncache(), true);
 });
