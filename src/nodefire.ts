@@ -35,6 +35,19 @@ export type NormalizedValue<T> =
   T;
 export type ReadValue<T> = Exclude<NormalizedValue<T>, undefined>;
 
+export interface CacheStats {
+  /** The current number of values pinned in the cache. */
+  count: number;
+  /** The maximum number of values that can be pinned in the cache, or zero if it is disabled. */
+  maxSize: number;
+  /** The number of cache attempts satisfied by the requested path or one of its ancestors. */
+  hits: number;
+  /** The number of cache attempts with no cached requested path or ancestor. */
+  misses: number;
+  /** `hits / (hits + misses)`, or zero if there have been no attempts. */
+  hitRate: number;
+}
+
 let cache: LRUCache<string, AnyNodeFire> | null;
 let cacheHits = 0, cacheMisses = 0;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
@@ -337,16 +350,30 @@ export default class NodeFire<
   cache(): void {
     if (!cache) return;
     if (!this.$ref.isEqual(this.$ref.ref)) return;  // don't cache queries
-    const key = this.database.app.name + '/' + this.path;
-    if (cache.get(key)) {
-      cacheHits++;
-    } else {
-      cacheMisses++;
-      cache.set(key, this);
-      this.$ref.on('value', noopCallback, () => {
-        if (cache) cache.delete(key);
-      });
+    const keyPrefix = getCacheKeyPrefix(this);
+    const key = keyPrefix + this.path;
+    let isHit = false;
+    let cachedPath = this.path;
+    while (true) {
+      // Probe ancestors without changing their LRU recency.
+      if (cache.has(keyPrefix + cachedPath)) {
+        cacheHits++;
+        isHit = true;
+        break;
+      }
+      if (cachedPath === '/') break;
+      cachedPath = cachedPath.slice(0, cachedPath.lastIndexOf('/')) || '/';
     }
+    if (!isHit) {
+      cacheMisses++;
+    } else if (cachedPath === this.path) {
+      cache.get(key);  // refresh recency without adding another listener
+      return;
+    }
+    cache.set(key, this);
+    this.$ref.on('value', noopCallback, () => {
+      if (cache) cache.delete(key);
+    });
   }
 
   /**
@@ -355,7 +382,7 @@ export default class NodeFire<
    */
   uncache(): undefined | boolean {
     if (!cache) return;
-    const key = this.database.app.name + '/' + this.path;
+    const key = getCacheKeyPrefix(this) + this.path;
     if (!cache.has(key)) return false;
     cache.delete(key);
     return true;
@@ -720,26 +747,48 @@ export default class NodeFire<
   /**
    * Gets the current number of values pinned in the cache.
    * @return {number} The current size of the cache.
+   * @deprecated Use `getCacheStats().count` instead.
    */
   static getCacheCount(): number {
-    return cache ? cache.size : 0;
+    return NodeFire.getCacheStats().count;
   }
 
   /**
-   * Gets the current cache hit rate.  This is very approximate, as it's only counted for get() and
-   * transaction() calls, and is unable to count ancestor hits, where the ancestor of the requested
-   * item is actually cached.
+   * Gets the current cache statistics.
+   * @return The current cache size and maximum, as well as its hit and miss counts and hit rate.
+   */
+  static getCacheStats(): CacheStats {
+    return {
+      count: cache ? cache.size : 0,
+      maxSize: cache ? cache.max : 0,
+      hits: cacheHits,
+      misses: cacheMisses,
+      hitRate: (cacheHits || cacheMisses) ? cacheHits / (cacheHits + cacheMisses) : 0
+    };
+  }
+
+  /**
+   * Gets the current cache hit rate.
    * @return {number} The cache's current hit rate.
+   * @deprecated Use `getCacheStats().hitRate` instead.
    */
   static getCacheHitRate(): number {
-    return (cacheHits || cacheMisses) ? cacheHits / (cacheHits + cacheMisses) : 0;
+    return NodeFire.getCacheStats().hitRate;
+  }
+
+  /**
+   * Resets the cache's hit and miss counters back to zero.
+   */
+  static resetCacheStats(): void {
+    cacheHits = cacheMisses = 0;
   }
 
   /**
    * Resets the cache's hit rate counters back to zero.
+   * @deprecated Use `resetCacheStats()` instead.
    */
   static resetCacheHitRate(): void {
-    cacheHits = cacheMisses = 0;
+    NodeFire.resetCacheStats();
   }
 
   /**
@@ -948,6 +997,10 @@ function wrapReject(nodefire: AnyNodeFire, method, value, reject?) {
 
 function noopCallback() {/* empty */}
 
+function getCacheKeyPrefix(ref: AnyNodeFire): string {
+  return ref.database.app.name + '\0' + ref.$ref.ref.root.toString() + '\0';
+}
+
 function trackTimeOffset(ref, recover = false) {
   const appName = ref.database.app.name;
   if (!recover) {
@@ -960,9 +1013,9 @@ function trackTimeOffset(ref, recover = false) {
 }
 
 function trackDisconnect(ref, recover = false) {
-  const appName = ref.database.app.name;
-  if (!recover && serverDisconnects[appName]) return;
-  serverDisconnects[appName] = true;
+  const databaseKey = getCacheKeyPrefix(ref);
+  if (!recover && serverDisconnects[databaseKey]) return;
+  serverDisconnects[databaseKey] = true;
   ref.root.child('.info/connected').on('value', snap => {
     if (!snap.val()) trimCache(ref);
   }, _.bind(trackDisconnect, ref, true));
@@ -970,7 +1023,7 @@ function trackDisconnect(ref, recover = false) {
 
 function trimCache(ref) {
   if (!cache) return;
-  const prefix = ref.database.app.name + '/';
+  const prefix = getCacheKeyPrefix(ref);
   // eslint-disable-next-line lodash/prefer-lodash-method
   cache.forEach((value, key) => {
     if (_.startsWith(key, prefix)) cache!.delete(key);

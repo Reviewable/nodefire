@@ -151,19 +151,32 @@ static setCacheSize(max)
 /**
  * Gets the current number of values pinned in the cache.
  * @return {number} The current size of the cache.
+ * @deprecated Use `getCacheStats().count` instead.
  */
 static getCacheCount()
 
 /**
- * Gets the current cache hit rate.  This is very approximate, as it's only counted for get() and
- * transaction() calls, and is unable to count ancestor hits, where the ancestor of the requested
- * item is actually cached.
+ * Gets the current cache statistics.
+ * @return The current cache statistics as `{count, maxSize, hits, misses, hitRate}`.  Hits include
+ *     requests covered by a cached ancestor.
+ */
+static getCacheStats()
+
+/**
+ * Gets the current cache hit rate.
  * @return {number} The cache's current hit rate.
+ * @deprecated Use `getCacheStats().hitRate` instead.
  */
 static getCacheHitRate()
 
 /**
- * Resets the cache's hit rate counters back to zero.
+ * Resets the cache's hit and miss counters back to zero.
+ */
+static resetCacheStats()
+
+/**
+ * Resets the cache's hit and miss counters back to zero.
+ * @deprecated Use `resetCacheStats()` instead.
  */
 static resetCacheHitRate()
 

@@ -1,5 +1,5 @@
 import type {Reference} from 'firebase-admin/database';
-import NodeFire, {type ChildNodeFireOf} from '../src';
+import NodeFire, {type CacheStats, type ChildNodeFireOf} from '../src';
 
 type Equal<Left, Right> =
   (<T>() => T extends Left ? 1 : 2) extends
@@ -25,6 +25,13 @@ interface Database {
 
 declare const reference: Reference;
 const untyped = new NodeFire(reference);
+const unusedCacheStats: CacheStats = NodeFire.getCacheStats();
+const unusedCacheCount: number = unusedCacheStats.count;
+const unusedCacheMaxSize: number = unusedCacheStats.maxSize;
+const unusedCacheHits: number = unusedCacheStats.hits;
+const unusedCacheMisses: number = unusedCacheStats.misses;
+const unusedCacheHitRate: number = unusedCacheStats.hitRate;
+NodeFire.resetCacheStats();
 type UntypedParentResult = Expect<
   Equal<GetResult<NonNullable<typeof untyped.parent>>, unknown>
 >;
