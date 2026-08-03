@@ -34,6 +34,13 @@ const unusedUntypedAsTyped: NodeFire<Database> = untyped;
 
 const user = db.child('organizations/:organization/users/:user');
 type UserResult = Expect<Equal<GetResult<typeof user>, User | null>>;
+const unusedTransaction = user.transaction(value => value);
+type TransactionResult = Expect<Equal<
+  Awaited<typeof unusedTransaction>,
+  User | null | undefined
+>>;
+const unusedTransactionOutcome: 'commit' | 'error' | 'skip' | undefined =
+  unusedTransaction.transaction.outcome;
 type InferredUser = Expect<Equal<
   typeof user extends NodeFire<
     infer Current, infer unusedRules, infer unusedWrite
@@ -136,6 +143,7 @@ type RuntimeOrganizationParentResult = Expect<
 export type NavigationTypeTests = [
   UntypedParentResult,
   UserResult,
+  TransactionResult,
   InferredUser,
   UsersResult,
   OrganizationResult,

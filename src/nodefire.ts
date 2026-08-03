@@ -49,6 +49,17 @@ export interface NodeFireError extends Error {
   timeout?: number;
 }
 
+export interface TransactionMetadata {
+  outcome?: 'commit' | 'error' | 'skip';
+  tries?: number;
+  prefetchDuration?: number;
+  duration?: number;
+}
+
+export interface TransactionPromise<T> extends Promise<T> {
+  transaction: TransactionMetadata;
+}
+
 declare module '@firebase/database-types' {
   interface Reference {
     // Added to Reference by firecrypt; use instead of the raw firebaseChildrenKeys call when
@@ -453,21 +464,16 @@ export default class NodeFire<
       prefetchValue?: boolean,
       timeout?: number
     }
-  ): Promise<ReadValue<Root> | null | undefined> {
+  ): TransactionPromise<ReadValue<Root> | null | undefined> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;  // easier than using => functions or binding explicitly
     options = options ?? {};
     let tries = 0, result: any;
     const startTime = self.now;
     let prefetchDoneTime: number;
-    const metadata: {
-      outcome?: any;
-      tries?: any;
-      prefetchDuration?:
-      number; duration?: number;
-    } = {};
+    const metadata: TransactionMetadata = {};
 
-    function fillMetadata(outcome: any) {
+    function fillMetadata(outcome: NonNullable<TransactionMetadata['outcome']>) {
       if (metadata.outcome) return;
       metadata.outcome = outcome;
       metadata.tries = tries;
@@ -481,13 +487,13 @@ export default class NodeFire<
 
     const op = {ref: this, method: 'transaction', args: [updateFunction]};
 
-    return Promise.all(
+    const promise = Promise.all(
       _.map(
         operationInterceptors,
         (interceptor: InterceptOperationsCallback) => Promise.resolve(interceptor(op, options))
       )
     ).then(() => {
-      const promise = new Promise<ReadValue<Root> | null | undefined>((resolve, reject) => {
+      return new Promise<ReadValue<Root> | null | undefined>((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
         let aborted = false, settled = false;
@@ -579,8 +585,8 @@ export default class NodeFire<
           txn();
         }
       });
-      return _.assign(promise, {transaction: metadata});
     });
+    return _.assign(promise, {transaction: metadata});
   }
 
   /**
