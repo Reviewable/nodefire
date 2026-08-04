@@ -674,9 +674,12 @@ export default class NodeFire<
    *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient
    *        errors (defaults to 1)
    *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
+   *   - timeout: the maximum number of milliseconds for all fetch attempts and retry delays
    * @return {Promise<string[]>} A promise that resolves to an array of key strings.
    */
-  childrenKeys(options: {maxTries?: number, retryInterval?: number}): Promise<string[]> {
+  childrenKeys(
+    options: {maxTries?: number, retryInterval?: number, timeout?: number}
+  ): Promise<string[]> {
     return this.$ref.ref.childrenKeys ?
       this.$ref.ref.childrenKeys(options) :
       firebaseChildrenKeys(this.$ref, options);
