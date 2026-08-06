@@ -597,6 +597,7 @@ export default class NodeFire<
           timeout = setTimeout(() => {
             if (settled) return;
             aborted = true;
+            fillMetadata('error');
             wrappedReject(_.assign(new Error('timeout'), {options, op}));
           }, options.timeout);
         }
