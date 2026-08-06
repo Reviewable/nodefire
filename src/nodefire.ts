@@ -1072,7 +1072,7 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
         }, options.timeout!);
       }));
     }
-    promises.push(Promise.resolve(fn(options)).then(result => {
+    promises.push(Promise.resolve().then(() => fn(options)).then(result => {
       settled = true;
       if (timeout) timeout.clear();
       return result;
