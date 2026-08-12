@@ -46,12 +46,9 @@ const interceptor: InterceptOperationsCallback = async (op, options) => {
   options.extra = true;
   await Promise.resolve([unusedDuration, unusedStartTime, unusedError, unusedTries]);
 };
-const stopBeforeInterceptor: () => void = NodeFire.interceptOperations(interceptor, beforeTrigger);
-const stopAfterInterceptor: () => void = NodeFire.interceptOperations(interceptor, afterTrigger);
-const stopDefaultInterceptor: () => void = NodeFire.interceptOperations(interceptor);
-stopBeforeInterceptor();
-stopAfterInterceptor();
-stopDefaultInterceptor();
+NodeFire.interceptOperations(interceptor, beforeTrigger);
+NodeFire.interceptOperations(interceptor, afterTrigger);
+NodeFire.interceptOperations(interceptor);
 type UntypedParentResult = Expect<
   Equal<GetResult<NonNullable<typeof untyped.parent>>, unknown>
 >;
