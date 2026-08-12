@@ -1,6 +1,6 @@
 {
   "name": "nodefire",
-  "version": "7.1.3",
+  "version": "7.2.0",
   "description": "A promise-centric Firebase library for NodeJS",
   "main": "built/index.js",
   "types": "built/index.d.ts",
@@ -18,7 +18,7 @@
     "lint": "eslint src/*.ts tests/*.ts tests/*.mjs",
     "check-types": "tsc --noEmit --skipLibCheck && tsc --project tests/tsconfig.json --skipLibCheck",
     "build": "tsc",
-    "test": "yarn build && node --test tests/cache.mjs",
+    "test": "yarn build && node --test tests/*.mjs",
     "prepack": "tsc"
   },
   "repository": "https://github.com/Reviewable/nodefire",

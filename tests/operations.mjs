@@ -1,0 +1,145 @@
+import assert from 'node:assert/strict';
+import {performance} from 'node:perf_hooks';
+import {test} from 'node:test';
+import {setImmediate, setTimeout} from 'node:timers';
+
+import _ from 'lodash';
+
+import NodeFireModule from '../built/index.js';
+
+const {default: NodeFire} = NodeFireModule;
+let appCounter = 0;
+
+class FakeReference {
+  constructor(path = '/', operations = {}, database = {
+    app: {name: `operations-test-${++appCounter}`, options: {}}
+  }) {
+    this.path = path;
+    this.operations = operations;
+    this.database = database;
+  }
+
+  get key() {
+    return this.path === '/' ? null : this.path.slice(this.path.lastIndexOf('/') + 1);
+  }
+
+  get ref() {
+    return this;
+  }
+
+  get root() {
+    return new FakeReference('/', this.operations, this.database);
+  }
+
+  child(path) {
+    return new FakeReference(
+      `${this.path === '/' ? '' : this.path}/${path}`, this.operations, this.database);
+  }
+
+  isEqual(other) {
+    return this.database === other.database && this.path === other.path;
+  }
+
+  on(event, callback) {
+    if (_.endsWith(this.path, '/.info/serverTimeOffset')) callback({val: _.constant(0)});
+    if (_.endsWith(this.path, '/.info/connected')) callback({val: _.constant(true)});
+  }
+
+  off() {/* Nothing to detach in the fake reference. */}
+
+  set(value) {
+    return this.operations.set?.(value) ?? Promise.resolve();
+  }
+
+  transaction(updateFunction, callback) {
+    return this.operations.transaction?.(updateFunction, callback) ?? Promise.resolve();
+  }
+
+  toString() {
+    return `https://operations.test${this.path}`;
+  }
+}
+
+test('before and after interceptors share the descriptor and wait for promises', async () => {
+  let resolveAfter;
+  const afterReady = new Promise(resolve => {resolveAfter = resolve;});
+  let beforeDescriptor;
+  let afterDescriptor;
+  const stopBefore = NodeFire.interceptOperations((op, options) => {
+    beforeDescriptor = op;
+    options.fromBefore = true;
+  });
+  const stopAfter = NodeFire.interceptOperations(async (op, options) => {
+    afterDescriptor = op;
+    assert.strictEqual(options.fromBefore, true);
+    await afterReady;
+  }, 'after');
+
+  try {
+    const ref = new NodeFire(new FakeReference('/writes'));
+    let settled = false;
+    const promise = ref.set('value').then(() => {settled = true;});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(settled, false);
+    assert.strictEqual(afterDescriptor, beforeDescriptor);
+    assert.strictEqual(afterDescriptor.method, 'set');
+    assert.deepStrictEqual(afterDescriptor.args, ['value']);
+    assert.strictEqual(afterDescriptor.error, undefined);
+    assert.ok(afterDescriptor.duration >= 0);
+    assert.ok(afterDescriptor.startTime <= performance.now());
+    resolveAfter();
+    await promise;
+  } finally {
+    stopBefore();
+    stopAfter();
+  }
+});
+
+test('after interceptors observe operation errors without replacing them', async () => {
+  const operationError = new Error('write failed');
+  let observedError;
+  const stopAfter = NodeFire.interceptOperations(op => {
+    observedError = op.error;
+    throw new Error('observer failed');
+  }, 'after');
+
+  try {
+    const ref = new NodeFire(new FakeReference('/writes', {
+      set: () => Promise.reject(operationError)
+    }));
+    await assert.rejects(ref.set('value'), error => {
+      assert.strictEqual(error, operationError);
+      assert.strictEqual(error.cause?.message, 'observer failed');
+      return true;
+    });
+    assert.strictEqual(observedError, operationError);
+  } finally {
+    stopAfter();
+  }
+});
+
+test('transaction duration is averaged across tries', async () => {
+  let descriptor;
+  const stopAfter = NodeFire.interceptOperations(op => {descriptor = op;}, 'after');
+
+  try {
+    const ref = new NodeFire(new FakeReference('/writes', {
+      transaction: (updateFunction, callback) => {
+        updateFunction(null);
+        setTimeout(() => {
+          updateFunction(null);
+          callback(null, true, {val: _.constant('committed')});
+        }, 30);
+        return Promise.resolve();
+      }
+    }));
+    const result = await ref.transaction(_.constant('committed'), {prefetchValue: false});
+    assert.strictEqual(result, 'committed');
+    assert.strictEqual(descriptor.transaction.outcome, 'commit');
+    assert.strictEqual(descriptor.transaction.tries, 2);
+    assert.ok(descriptor.duration >= 10);
+    assert.ok(descriptor.duration < 30);
+  } finally {
+    stopAfter();
+  }
+});

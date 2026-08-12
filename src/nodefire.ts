@@ -19,10 +19,26 @@ interface NodeFireTypeCarrier {
 
 type AnyNodeFire = NodeFire<any, any, any>;
 
+export interface OperationDescriptor {
+  readonly ref: AnyNodeFire;
+  readonly method: string;
+  readonly args: any[];
+  /** `performance.now()` when the Firebase operation started.  Only present after completion. */
+  readonly startTime?: number;
+  /** Firebase operation duration in milliseconds.  Transactions report the average per try. */
+  readonly duration?: number;
+  /** The operation error, if any.  Only present after completion. */
+  readonly error?: Error;
+  /** Transaction metadata, only present for transactions after completion. */
+  readonly transaction?: TransactionMetadata;
+}
+
 export type InterceptOperationsCallback = (
-  op: {ref: AnyNodeFire, method: string, args: any[]},
+  op: OperationDescriptor,
   options: any
 ) => Promise<void> | void;
+
+export type OperationInterceptorTrigger = 'before' | 'after';
 
 export type PrimitiveValue = string | number | boolean | null;
 export interface Info {
@@ -51,14 +67,18 @@ export interface CacheStats {
 let cache: LRUCache<string, AnyNodeFire> | null;
 let cacheHits = 0, cacheMisses = 0;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
-const operationInterceptors: InterceptOperationsCallback[] = [];
+const operationInterceptors: Record<OperationInterceptorTrigger, InterceptOperationsCallback[]> = {
+  before: [], after: []
+};
 
 export interface Scope {
   [key: string]: any;
 }
 
 export interface NodeFireError extends Error {
+  cause?: unknown;
   inputValues?: any;
+  interceptorError?: unknown;
   timeout?: number;
 }
 
@@ -496,7 +516,7 @@ export default class NodeFire<
     const self = this;  // easier than using => functions or binding explicitly
     options = options ?? {};
     let tries = 0, result: any;
-    const startTime = self.now;
+    const startTime = performance.now();
     let prefetchDoneTime: number;
     const metadata: TransactionMetadata = {};
 
@@ -506,17 +526,18 @@ export default class NodeFire<
       metadata.tries = tries;
       if (prefetchDoneTime) {
         metadata.prefetchDuration = prefetchDoneTime - startTime;
-        metadata.duration = self.now - prefetchDoneTime;
+        metadata.duration = performance.now() - prefetchDoneTime;
       } else {
-        metadata.duration = self.now - startTime;
+        metadata.duration = performance.now() - startTime;
       }
     }
 
-    const op = {ref: this, method: 'transaction', args: [updateFunction]};
+    const op: OperationDescriptor = {ref: this, method: 'transaction', args: [updateFunction]};
+    let operationStartTime: number | undefined;
 
     const promise = Promise.all(
       _.map(
-        operationInterceptors,
+        operationInterceptors.before,
         (interceptor: InterceptOperationsCallback) => Promise.resolve(interceptor(op, options))
       )
     ).then(() => {
@@ -564,7 +585,8 @@ export default class NodeFire<
 
         let onceTxn, timeout: Timeout;
         function txn() {
-          if (!prefetchDoneTime) prefetchDoneTime = self.now;
+          if (!prefetchDoneTime) prefetchDoneTime = performance.now();
+          operationStartTime ??= prefetchDoneTime;
           try {
             self.$ref.ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
               if (error && (error.message === 'set' || error.message === 'disconnect')) {
@@ -613,7 +635,22 @@ export default class NodeFire<
           txn();
         }
       });
-    });
+    }).then(
+      async value => {
+        await interceptCompletedOperation(
+          op, options!, operationStartTime, metadata.tries, undefined, metadata);
+        return value;
+      },
+      async error => {
+        try {
+          await interceptCompletedOperation(
+            op, options!, operationStartTime, metadata.tries, error, metadata);
+        } catch (interceptorError) {
+          attachInterceptorError(error, interceptorError);
+        }
+        throw error;
+      }
+    );
     return _.assign(promise, {transaction: metadata});
   }
 
@@ -719,17 +756,30 @@ export default class NodeFire<
   }
 
   /**
-   * Adds an intercepting callback before all NodeFire database operations.  This callback can
-   * modify the operation's options or block it while performing other work.
+   * Adds an intercepting callback before or after all NodeFire database operations.  A before
+   * callback can modify the operation's options or block it while performing other work.  An after
+   * callback receives the same operation descriptor decorated with completion details.
    * @param callback
-   *     The callback to invoke before each operation.  It will be passed two
-   *     arguments: an operation descriptor ({ref, method, args}) and an options object.  The
-   *     descriptor is read-only but the options can be modified.  The callback can return any value
-   *     (which will be ignored) or a promise, to block execution of the operation (but not other
-   *     interceptors) until the promise settles.
+   *     The callback to invoke.  It will be passed two arguments: an operation descriptor and an
+   *     options object.  The descriptor is read-only but before callbacks can modify the options.
+   *     The callback can return any value (which will be ignored) or a promise, to block the
+   *     operation from advancing past this trigger (but not other interceptors) until it settles.
+   * @param trigger Whether to invoke the callback before or after operations.  Defaults to before.
+   * @return An idempotent function that removes the callback.
    */
-  static interceptOperations(callback: InterceptOperationsCallback): void {
-    operationInterceptors.push(callback);
+  static interceptOperations(
+    callback: InterceptOperationsCallback,
+    trigger: OperationInterceptorTrigger = 'before'
+  ): () => void {
+    const interceptors = operationInterceptors[trigger];
+    if (!interceptors) {
+      throw new Error('Operation interceptor trigger must be \'before\' or \'after\'');
+    }
+    interceptors.push(callback);
+    return _.once(() => {
+      const index = interceptors.indexOf(callback);
+      if (index >= 0) interceptors.splice(index, 1);
+    });
   }
 
   /**
@@ -1058,11 +1108,9 @@ function getNormalRawValue<T>(value: T): ReadValue<T> {
 function invoke(op, options: {timeout?: number} = {}, fn) {
   options = options ?? {};
   return Promise.all(
-    _.map(
-      operationInterceptors,
-      interceptor => Promise.resolve(interceptor(op, options))
-    )
+    _.map(operationInterceptors.before, interceptor => Promise.resolve(interceptor(op, options)))
   ).then(() => {
+    const startTime = performance.now();
     const promises: Promise<void>[] = [];
     let timeout: Timeout | undefined, settled = false;
     if (options.timeout) {
@@ -1077,13 +1125,53 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
       if (timeout) timeout.clear();
       return result;
     }));
-    return Promise.race(promises).catch(e => {
+    const promise = Promise.race(promises).catch(e => {
       settled = true;
       if (timeout) timeout.clear();
       if (e.message === 'timeout') e.timeout = options.timeout;
       return handleError(e, op, Promise.reject.bind(Promise));
     });
+    return promise.then(
+      async value => {
+        await interceptCompletedOperation(op, options, startTime);
+        return value;
+      },
+      async error => {
+        try {
+          await interceptCompletedOperation(op, options, startTime, undefined, error);
+        } catch (interceptorError) {
+          attachInterceptorError(error, interceptorError);
+        }
+        throw error;
+      }
+    );
   });
+}
+
+async function interceptCompletedOperation(
+  op: OperationDescriptor,
+  options: any,
+  startTime = performance.now(),
+  tries?: number,
+  error?: Error,
+  transaction?: TransactionMetadata
+) {
+  const elapsed = performance.now() - startTime;
+  _.assign(op, {
+    startTime,
+    duration: elapsed / (tries || 1),
+    ...error && {error},
+    ...transaction && {transaction}
+  });
+  await Promise.all(_.map(
+    operationInterceptors.after,
+    interceptor => Promise.resolve(interceptor(op, options))
+  ));
+}
+
+function attachInterceptorError(error: NodeFireError, interceptorError: unknown) {
+  if (error.cause === undefined) error.cause = interceptorError;
+  else error.interceptorError = interceptorError;
 }
 
 function handleError(error, op, callback) {
