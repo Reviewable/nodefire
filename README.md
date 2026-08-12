@@ -131,15 +131,19 @@ static enableFirebaseLogging(enable)
 enablePermissionDebugging(legacySecret)
 
 /**
- * Adds an intercepting callback before all NodeFire database operations.  This callback can
- * modify the operation's options or block it while performing other work.
- * @param {Function} callback The callback to invoke before each operation.  It will be passed two
- *     arguments: an operation descriptor ({ref, method, args}) and an options object.  The
- *     descriptor is read-only but the options can be modified.  The callback can return any value
- *     (which will be ignored) or a promise, to block execution of the operation (but not other
- *     interceptors) until the promise settles.
+ * Adds an intercepting callback before or after all NodeFire database operations.
+ * @param {Function} callback The callback to invoke.  It will be passed an operation descriptor
+ *     ({ref, method, args}) and the operation's options object.  Before callbacks can modify the
+ *     options.  After callbacks receive the same descriptor decorated with `startTime`, `duration`,
+ *     optional `error`, and transaction metadata.  Transaction duration is averaged across its
+ *     tries.  A returned promise blocks the operation from advancing past the selected trigger
+ *     until it settles.  If both the operation and an after callback fail, the operation error is
+ *     retained and the callback error is attached as its `cause` (or `interceptorError` if it
+ *     already had a cause).
+ * @param {'before' | 'after'} trigger The callback trigger.  Defaults to `before`.
+ * @return {Function} An idempotent function that removes the callback.
  */
-static interceptOperations(callback)
+static interceptOperations(callback, trigger = 'before')
 
 /**
  * Sets the maximum number of values to keep pinned and updated in the cache.  The cache is not used
