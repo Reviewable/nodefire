@@ -532,6 +532,7 @@ export default class NodeFire<
       }
     }
 
+    type OperationResult = ReadValue<Root> | null | undefined;
     const op: OperationDescriptor = {ref: this, method: 'transaction', args: [updateFunction]};
     let operationStartTime: number | undefined;
 
@@ -541,7 +542,7 @@ export default class NodeFire<
         (interceptor: InterceptOperationsCallback) => Promise.resolve(interceptor(op, options))
       )
     ).then(() => {
-      return new Promise<ReadValue<Root> | null | undefined>((resolve, reject) => {
+      const operationPromise = new Promise<OperationResult>((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
         let aborted = false, settled = false;
@@ -635,22 +636,23 @@ export default class NodeFire<
           txn();
         }
       });
-    }).then(
-      async value => {
-        await interceptCompletedOperation(
-          op, options!, operationStartTime, metadata.tries, undefined, metadata);
-        return value;
-      },
-      async error => {
-        try {
+      return operationPromise.then(
+        async value => {
           await interceptCompletedOperation(
-            op, options!, operationStartTime, metadata.tries, error, metadata);
-        } catch (interceptorError) {
-          attachInterceptorError(error, interceptorError);
+            op, options!, operationStartTime, metadata.tries, undefined, metadata);
+          return value;
+        },
+        async error => {
+          try {
+            await interceptCompletedOperation(
+              op, options!, operationStartTime, metadata.tries, error, metadata);
+          } catch (interceptorError) {
+            attachInterceptorError(error, interceptorError);
+          }
+          throw error;
         }
-        throw error;
-      }
-    );
+      );
+    });
     return _.assign(promise, {transaction: metadata});
   }
 
@@ -764,22 +766,20 @@ export default class NodeFire<
    *     options object.  The descriptor is read-only but before callbacks can modify the options.
    *     The callback can return any value (which will be ignored) or a promise, to block the
    *     operation from advancing past this trigger (but not other interceptors) until it settles.
+   *     If an after callback fails after a successful operation, its error is propagated to the
+   *     caller.  If the operation also failed, its original error is preserved and the callback
+   *     error is attached to it.
    * @param trigger Whether to invoke the callback before or after operations.  Defaults to before.
-   * @return An idempotent function that removes the callback.
    */
   static interceptOperations(
     callback: InterceptOperationsCallback,
     trigger: OperationInterceptorTrigger = 'before'
-  ): () => void {
+  ): void {
     const interceptors = operationInterceptors[trigger];
     if (!interceptors) {
       throw new Error('Operation interceptor trigger must be \'before\' or \'after\'');
     }
     interceptors.push(callback);
-    return _.once(() => {
-      const index = interceptors.indexOf(callback);
-      if (index >= 0) interceptors.splice(index, 1);
-    });
   }
 
   /**

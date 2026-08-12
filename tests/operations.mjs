@@ -9,6 +9,16 @@ import NodeFireModule from '../built/index.js';
 
 const {default: NodeFire} = NodeFireModule;
 let appCounter = 0;
+let beforeInterceptor = _.noop;
+let afterInterceptor = _.noop;
+
+NodeFire.interceptOperations((...args) => beforeInterceptor(...args));
+NodeFire.interceptOperations((...args) => afterInterceptor(...args), 'after');
+
+function resetInterceptors() {
+  beforeInterceptor = _.noop;
+  afterInterceptor = _.noop;
+}
 
 class FakeReference {
   constructor(path = '/', operations = {}, database = {
@@ -60,86 +70,107 @@ class FakeReference {
   }
 }
 
-test('before and after interceptors share the descriptor and wait for promises', async () => {
+test('before and after interceptors share the descriptor and wait for promises', async t => {
+  t.after(resetInterceptors);
   let resolveAfter;
   const afterReady = new Promise(resolve => {resolveAfter = resolve;});
   let beforeDescriptor;
   let afterDescriptor;
-  const stopBefore = NodeFire.interceptOperations((op, options) => {
+  beforeInterceptor = (op, options) => {
     beforeDescriptor = op;
     options.fromBefore = true;
-  });
-  const stopAfter = NodeFire.interceptOperations(async (op, options) => {
+  };
+  afterInterceptor = async (op, options) => {
     afterDescriptor = op;
     assert.strictEqual(options.fromBefore, true);
     await afterReady;
-  }, 'after');
+  };
 
-  try {
-    const ref = new NodeFire(new FakeReference('/writes'));
-    let settled = false;
-    const promise = ref.set('value').then(() => {settled = true;});
-    await new Promise(resolve => setImmediate(resolve));
-    assert.strictEqual(settled, false);
-    assert.strictEqual(afterDescriptor, beforeDescriptor);
-    assert.strictEqual(afterDescriptor.method, 'set');
-    assert.deepStrictEqual(afterDescriptor.args, ['value']);
-    assert.strictEqual(afterDescriptor.error, undefined);
-    assert.ok(afterDescriptor.duration >= 0);
-    assert.ok(afterDescriptor.startTime <= performance.now());
-    resolveAfter();
-    await promise;
-  } finally {
-    stopBefore();
-    stopAfter();
-  }
+  const ref = new NodeFire(new FakeReference('/writes'));
+  let settled = false;
+  const promise = ref.set('value').then(() => {settled = true;});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(settled, false);
+  assert.strictEqual(afterDescriptor, beforeDescriptor);
+  assert.strictEqual(afterDescriptor.method, 'set');
+  assert.deepStrictEqual(afterDescriptor.args, ['value']);
+  assert.strictEqual(afterDescriptor.error, undefined);
+  assert.ok(afterDescriptor.duration >= 0);
+  assert.ok(afterDescriptor.startTime <= performance.now());
+  resolveAfter();
+  await promise;
 });
 
-test('after interceptors observe operation errors without replacing them', async () => {
+test('after interceptors observe operation errors without replacing them', async t => {
+  t.after(resetInterceptors);
   const operationError = new Error('write failed');
   let observedError;
-  const stopAfter = NodeFire.interceptOperations(op => {
+  afterInterceptor = op => {
     observedError = op.error;
     throw new Error('observer failed');
-  }, 'after');
+  };
 
-  try {
-    const ref = new NodeFire(new FakeReference('/writes', {
-      set: () => Promise.reject(operationError)
-    }));
-    await assert.rejects(ref.set('value'), error => {
-      assert.strictEqual(error, operationError);
-      assert.strictEqual(error.cause?.message, 'observer failed');
-      return true;
-    });
-    assert.strictEqual(observedError, operationError);
-  } finally {
-    stopAfter();
-  }
+  const ref = new NodeFire(new FakeReference('/writes', {
+    set: () => Promise.reject(operationError)
+  }));
+  await assert.rejects(ref.set('value'), error => {
+    assert.strictEqual(error, operationError);
+    assert.strictEqual(error.cause?.message, 'observer failed');
+    return true;
+  });
+  assert.strictEqual(observedError, operationError);
 });
 
-test('transaction duration is averaged across tries', async () => {
-  let descriptor;
-  const stopAfter = NodeFire.interceptOperations(op => {descriptor = op;}, 'after');
+test('after interceptor failures propagate from successful operations', async t => {
+  t.after(resetInterceptors);
+  const interceptorError = new Error('observer failed');
+  afterInterceptor = () => {throw interceptorError;};
 
-  try {
-    const ref = new NodeFire(new FakeReference('/writes', {
-      transaction: (updateFunction, callback) => {
+  const ref = new NodeFire(new FakeReference('/writes'));
+  await assert.rejects(ref.set('value'), error => error === interceptorError);
+});
+
+test('transaction duration is averaged across tries', async t => {
+  t.after(resetInterceptors);
+  let descriptor;
+  afterInterceptor = op => {descriptor = op;};
+
+  const ref = new NodeFire(new FakeReference('/writes', {
+    transaction: (updateFunction, callback) => {
+      updateFunction(null);
+      setTimeout(() => {
         updateFunction(null);
-        setTimeout(() => {
-          updateFunction(null);
-          callback(null, true, {val: _.constant('committed')});
-        }, 30);
-        return Promise.resolve();
-      }
-    }));
-    const result = await ref.transaction(_.constant('committed'), {prefetchValue: false});
-    assert.strictEqual(result, 'committed');
-    assert.strictEqual(descriptor.transaction.outcome, 'commit');
-    assert.strictEqual(descriptor.transaction.tries, 2);
-    assert.ok(descriptor.duration >= 10);
-    assert.ok(descriptor.duration < 30);
-  } finally {
-    stopAfter();
-  }
+        callback(null, true, {val: _.constant('committed')});
+      }, 30);
+      return Promise.resolve();
+    }
+  }));
+  const result = await ref.transaction(_.constant('committed'), {prefetchValue: false});
+  assert.strictEqual(result, 'committed');
+  assert.strictEqual(descriptor.transaction.outcome, 'commit');
+  assert.strictEqual(descriptor.transaction.tries, 2);
+  assert.ok(descriptor.duration >= 10);
+  assert.ok(descriptor.duration < 30);
+});
+
+test('transactions blocked by before interceptors do not invoke after interceptors', async t => {
+  t.after(resetInterceptors);
+  const interceptorError = new Error('blocked');
+  let operationCalled = false;
+  let afterCalled = false;
+  beforeInterceptor = () => Promise.reject(interceptorError);
+  afterInterceptor = () => {afterCalled = true;};
+
+  const ref = new NodeFire(new FakeReference('/writes', {
+    transaction: () => {
+      operationCalled = true;
+      return Promise.resolve();
+    }
+  }));
+  await assert.rejects(
+    ref.transaction(_.constant('committed'), {prefetchValue: false}),
+    error => error === interceptorError
+  );
+  assert.strictEqual(operationCalled, false);
+  assert.strictEqual(afterCalled, false);
 });
