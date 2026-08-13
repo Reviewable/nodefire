@@ -286,7 +286,7 @@ export default class NodeFire<
    *     precedence over) the one carried by this NodeFire object.
    * @return A new NodeFire object with the same reference and new scope.
    */
-  scope(scope: Scope): NoInfer<SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>> {
+  scope(scope: Scope): NoInfer<SameNodeFireOf<this>> {
     return new NodeFire(
       this.$ref, _.assign(_.clone(this.$scope), scope)
     ) as SameNodeFire<this, Root, WriteSpecialRules, WriteRoot>;
@@ -1246,6 +1246,15 @@ type SameNodeFire<
     DatabaseRoot, WriteDatabaseRoot, Parents
   > :
   NodeFire<Root, WriteSpecialRules, WriteRoot>;
+
+export type SameNodeFireOf<
+  This extends NodeFireTypeCarrier
+> = SameNodeFire<
+  This,
+  This[typeof NODE_FIRE_TYPES][0],
+  This[typeof NODE_FIRE_TYPES][1],
+  This[typeof NODE_FIRE_TYPES][2]
+>;
 
 type RootNodeFire<
   This,
