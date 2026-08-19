@@ -536,12 +536,7 @@ export default class NodeFire<
     const op: OperationDescriptor = {ref: this, method: 'transaction', args: [updateFunction]};
     let operationStartTime: number | undefined;
 
-    const promise = Promise.all(
-      _.map(
-        operationInterceptors.before,
-        (interceptor: InterceptOperationsCallback) => Promise.resolve(interceptor(op, options))
-      )
-    ).then(() => {
+    const promise = runOperationInterceptors('before', op, options).then(() => {
       const operationPromise = new Promise<OperationResult>((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
@@ -1107,9 +1102,7 @@ function getNormalRawValue<T>(value: T): ReadValue<T> {
 
 function invoke(op, options: {timeout?: number} = {}, fn) {
   options = options ?? {};
-  return Promise.all(
-    _.map(operationInterceptors.before, interceptor => Promise.resolve(interceptor(op, options)))
-  ).then(() => {
+  return runOperationInterceptors('before', op, options).then(() => {
     const startTime = performance.now();
     const promises: Promise<void>[] = [];
     let timeout: Timeout | undefined, settled = false;
@@ -1172,9 +1165,17 @@ async function interceptCompletedOperation(
     ...error && {error},
     ...transaction && {transaction}
   });
-  await Promise.all(_.map(
-    operationInterceptors.after,
-    interceptor => Promise.resolve(interceptor(op, options))
+  await runOperationInterceptors('after', op, options);
+}
+
+function runOperationInterceptors(
+  trigger: OperationInterceptorTrigger,
+  op: OperationDescriptor,
+  options: any
+) {
+  return Promise.all(_.map(
+    operationInterceptors[trigger],
+    interceptor => Promise.resolve().then(() => interceptor(op, options))
   ));
 }
 

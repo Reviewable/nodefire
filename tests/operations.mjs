@@ -24,13 +24,16 @@ const {default: NodeFire} = require('../built/index.js');
 let appCounter = 0;
 let beforeInterceptor = _.noop;
 let afterInterceptor = _.noop;
+let laterAfterInterceptor = _.noop;
 
 NodeFire.interceptOperations((...args) => beforeInterceptor(...args));
 NodeFire.interceptOperations((...args) => afterInterceptor(...args), 'after');
+NodeFire.interceptOperations((...args) => laterAfterInterceptor(...args), 'after');
 
 function resetInterceptors() {
   beforeInterceptor = _.noop;
   afterInterceptor = _.noop;
+  laterAfterInterceptor = _.noop;
 }
 
 class FakeReference {
@@ -134,13 +137,16 @@ test('after interceptors observe operation errors without replacing them', async
   assert.strictEqual(observedError, operationError);
 });
 
-test('after interceptor failures propagate from successful operations', async t => {
+test('after interceptor failures propagate without blocking later interceptors', async t => {
   t.after(resetInterceptors);
   const interceptorError = new Error('observer failed');
+  let laterCalled = false;
   afterInterceptor = () => {throw interceptorError;};
+  laterAfterInterceptor = () => {laterCalled = true;};
 
   const ref = new NodeFire(new FakeReference('/writes'));
   await assert.rejects(ref.set('value'), error => error === interceptorError);
+  assert.strictEqual(laterCalled, true);
 });
 
 test('permission diagnostics do not add to operation duration', async t => {
