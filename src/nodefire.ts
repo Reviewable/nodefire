@@ -1175,16 +1175,11 @@ function runOperationInterceptors(
 ): Promise<void> {
   const promises = _.map(
     operationInterceptors[trigger],
-    interceptor => Promise.resolve()
-      .then(() => interceptor(op, options))
-      .then(
-        () => ({rejected: false as const}),
-        error => ({rejected: true as const, error})
-      )
+    interceptor => Promise.resolve().then(() => interceptor(op, options))
   );
-  return Promise.all(promises).then(results => {
+  return Promise.allSettled(promises).then(results => {
     for (const result of results) {
-      if (result.rejected) throw result.error;
+      if (result.status === 'rejected') throw result.reason;
     }
   });
 }
