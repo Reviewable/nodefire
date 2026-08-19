@@ -137,16 +137,35 @@ test('after interceptors observe operation errors without replacing them', async
   assert.strictEqual(observedError, operationError);
 });
 
-test('after interceptor failures propagate without blocking later interceptors', async t => {
+test('after interceptor failures wait for later interceptors before propagating', async t => {
   t.after(resetInterceptors);
   const interceptorError = new Error('observer failed');
   let laterCalled = false;
+  let resolveLater;
+  const laterReady = new Promise(resolve => {resolveLater = resolve;});
   afterInterceptor = () => {throw interceptorError;};
-  laterAfterInterceptor = () => {laterCalled = true;};
+  laterAfterInterceptor = () => {
+    laterCalled = true;
+    return laterReady;
+  };
 
   const ref = new NodeFire(new FakeReference('/writes'));
-  await assert.rejects(ref.set('value'), error => error === interceptorError);
+  let settled = false;
+  let rejection;
+  const promise = ref.set('value');
+  const observedPromise = promise.then(
+    () => {settled = true;},
+    error => {
+      settled = true;
+      rejection = error;
+    }
+  );
+  await new Promise(resolve => setImmediate(resolve));
   assert.strictEqual(laterCalled, true);
+  assert.strictEqual(settled, false);
+  resolveLater();
+  await observedPromise;
+  assert.strictEqual(rejection, interceptorError);
 });
 
 test('permission diagnostics do not add to operation duration', async t => {

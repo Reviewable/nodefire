@@ -1172,11 +1172,21 @@ function runOperationInterceptors(
   trigger: OperationInterceptorTrigger,
   op: OperationDescriptor,
   options: any
-) {
-  return Promise.all(_.map(
+): Promise<void> {
+  const promises = _.map(
     operationInterceptors[trigger],
-    interceptor => Promise.resolve().then(() => interceptor(op, options))
-  ));
+    interceptor => Promise.resolve()
+      .then(() => interceptor(op, options))
+      .then(
+        () => ({rejected: false as const}),
+        error => ({rejected: true as const, error})
+      )
+  );
+  return Promise.all(promises).then(results => {
+    for (const result of results) {
+      if (result.rejected) throw result.error;
+    }
+  });
 }
 
 function attachInterceptorError(error: NodeFireError, interceptorError: unknown) {
