@@ -134,13 +134,14 @@ enablePermissionDebugging(legacySecret)
  * Adds an intercepting callback before or after all NodeFire database operations.
  * @param {Function} callback The callback to invoke.  It will be passed an operation descriptor
  *     ({ref, method, args}) and the operation's options object.  Before callbacks can modify the
- *     options.  After callbacks receive the same descriptor decorated with `startTime`, `duration`,
- *     optional `error`, and transaction metadata.  Transaction duration is averaged across its
- *     tries.  A returned promise blocks the operation from advancing past the selected trigger
- *     until it settles.  If an after callback fails after a successful operation, its error is
- *     propagated to the caller.  If both the operation and an after callback fail, the operation
- *     error is retained and the callback error is attached as its `cause` (or `interceptorError`
- *     if it already had a cause).
+ *     options.  After callbacks receive the same descriptor decorated with optional `startTime`,
+ *     `duration`, `error`, and transaction metadata.  Transaction duration excludes prefetch and
+ *     is averaged across its tries; `startTime` and `duration` are omitted if no try was started.
+ *     A returned promise blocks the operation from advancing past the selected trigger until it
+ *     settles.  If an after callback fails after a successful operation, its error is propagated
+ *     to the caller.  If both the operation and an after callback fail, the operation error is
+ *     retained and the callback error is attached as its `cause` (or `interceptorError` if it
+ *     already had a cause).
  * @param {'before' | 'after'} trigger The callback trigger.  Defaults to `before`.
  */
 static interceptOperations(callback, trigger = 'before')

@@ -23,9 +23,9 @@ export interface OperationDescriptor {
   readonly ref: AnyNodeFire;
   readonly method: string;
   readonly args: any[];
-  /** `performance.now()` when the Firebase operation started.  Only present after completion. */
+  /** `performance.now()` when the Firebase operation started, if it was attempted. */
   readonly startTime?: number;
-  /** Firebase operation duration in milliseconds.  Transactions report the average per try. */
+  /** Firebase operation duration in milliseconds, if attempted.  Transactions average per try. */
   readonly duration?: number;
   /** The operation error, if any.  Only present after completion. */
   readonly error?: Error;
@@ -86,6 +86,7 @@ export interface TransactionMetadata {
   outcome?: 'commit' | 'error' | 'skip';
   tries?: number;
   prefetchDuration?: number;
+  /** Firebase transaction duration, excluding prefetch; absent if no transaction was attempted. */
   duration?: number;
 }
 
@@ -517,24 +518,21 @@ export default class NodeFire<
     options = options ?? {};
     let tries = 0, result: any;
     const startTime = performance.now();
-    let prefetchDoneTime: number;
+    let prefetchDoneTime: number | undefined;
     const metadata: TransactionMetadata = {};
 
     function fillMetadata(outcome: NonNullable<TransactionMetadata['outcome']>) {
       if (metadata.outcome) return;
       metadata.outcome = outcome;
       metadata.tries = tries;
-      if (prefetchDoneTime) {
+      if (prefetchDoneTime !== undefined) {
         metadata.prefetchDuration = prefetchDoneTime - startTime;
         metadata.duration = performance.now() - prefetchDoneTime;
-      } else {
-        metadata.duration = performance.now() - startTime;
       }
     }
 
     type OperationResult = ReadValue<Root> | null | undefined;
     const op: OperationDescriptor = {ref: this, method: 'transaction', args: [updateFunction]};
-    let operationStartTime: number | undefined;
 
     const promise = runOperationInterceptors('before', op, options).then(() => {
       const operationPromise = new Promise<OperationResult>((resolve, reject) => {
@@ -581,8 +579,7 @@ export default class NodeFire<
 
         let onceTxn, timeout: Timeout;
         function txn() {
-          if (!prefetchDoneTime) prefetchDoneTime = performance.now();
-          operationStartTime ??= prefetchDoneTime;
+          prefetchDoneTime ??= performance.now();
           try {
             self.$ref.ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
               if (error && (error.message === 'set' || error.message === 'disconnect')) {
@@ -634,13 +631,13 @@ export default class NodeFire<
       return operationPromise.then(
         async value => {
           await interceptCompletedOperation(
-            op, options!, operationStartTime, metadata.tries, undefined, undefined, metadata);
+            op, options!, prefetchDoneTime, metadata.tries, undefined, undefined, metadata);
           return value;
         },
         async error => {
           try {
             await interceptCompletedOperation(
-              op, options!, operationStartTime, metadata.tries, error, undefined, metadata);
+              op, options!, prefetchDoneTime, metadata.tries, error, undefined, metadata);
           } catch (interceptorError) {
             attachInterceptorError(error, interceptorError);
           }
@@ -1152,16 +1149,18 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
 async function interceptCompletedOperation(
   op: OperationDescriptor,
   options: any,
-  startTime = performance.now(),
+  startTime?: number,
   tries?: number,
   error?: Error,
   endTime = performance.now(),
   transaction?: TransactionMetadata
 ) {
-  const elapsed = transaction?.duration ?? endTime - startTime;
-  _.assign(op, {
+  const timing = startTime === undefined ? {} : {
     startTime,
-    duration: elapsed / (tries || 1),
+    duration: (transaction?.duration ?? endTime - startTime) / (tries || 1)
+  };
+  _.assign(op, {
+    ...timing,
     ...error && {error},
     ...transaction && {transaction}
   });

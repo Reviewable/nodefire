@@ -66,9 +66,16 @@ class FakeReference {
     return this.database === other.database && this.path === other.path;
   }
 
-  on(event, callback) {
-    if (_.endsWith(this.path, '/.info/serverTimeOffset')) callback({val: _.constant(0)});
-    if (_.endsWith(this.path, '/.info/connected')) callback({val: _.constant(true)});
+  on(event, callback, cancelCallback) {
+    if (_.endsWith(this.path, '/.info/serverTimeOffset')) {
+      callback({val: _.constant(0)});
+      return;
+    }
+    if (_.endsWith(this.path, '/.info/connected')) {
+      callback({val: _.constant(true)});
+      return;
+    }
+    this.operations.on?.(event, callback, cancelCallback);
   }
 
   off() {/* Nothing to detach in the fake reference. */}
@@ -223,6 +230,27 @@ test('transaction duration is averaged across tries', async t => {
   assert.strictEqual(descriptor.transaction.tries, 2);
   assert.ok(descriptor.duration >= 10);
   assert.ok(descriptor.duration < 30);
+});
+
+test('transactions cancelled during prefetch omit operation timing', async t => {
+  t.after(resetInterceptors);
+  const prefetchError = new Error('cancelled');
+  let descriptor;
+  let operationCalled = false;
+  afterInterceptor = op => {descriptor = op;};
+
+  const ref = new NodeFire(new FakeReference('/writes', {
+    on: (event, callback, cancelCallback) => cancelCallback(prefetchError),
+    transaction: () => {
+      operationCalled = true;
+      return Promise.resolve();
+    }
+  }));
+  await assert.rejects(ref.transaction(_.constant('committed')), error => error === prefetchError);
+  assert.strictEqual(operationCalled, false);
+  assert.strictEqual(descriptor.startTime, undefined);
+  assert.strictEqual(descriptor.duration, undefined);
+  assert.strictEqual(descriptor.transaction.duration, undefined);
 });
 
 test('transactions blocked by before interceptors do not invoke after interceptors', async t => {
