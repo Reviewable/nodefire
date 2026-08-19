@@ -639,13 +639,13 @@ export default class NodeFire<
       return operationPromise.then(
         async value => {
           await interceptCompletedOperation(
-            op, options!, operationStartTime, metadata.tries, undefined, metadata);
+            op, options!, operationStartTime, metadata.tries, undefined, undefined, metadata);
           return value;
         },
         async error => {
           try {
             await interceptCompletedOperation(
-              op, options!, operationStartTime, metadata.tries, error, metadata);
+              op, options!, operationStartTime, metadata.tries, error, undefined, metadata);
           } catch (interceptorError) {
             attachInterceptorError(error, interceptorError);
           }
@@ -1125,20 +1125,28 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
       if (timeout) timeout.clear();
       return result;
     }));
-    const promise = Promise.race(promises).catch(e => {
-      settled = true;
-      if (timeout) timeout.clear();
-      if (e.message === 'timeout') e.timeout = options.timeout;
-      return handleError(e, op, Promise.reject.bind(Promise));
-    });
+    let endTime = startTime;
+    const promise = Promise.race(promises).then(
+      value => {
+        endTime = performance.now();
+        return value;
+      },
+      e => {
+        endTime = performance.now();
+        settled = true;
+        if (timeout) timeout.clear();
+        if (e.message === 'timeout') e.timeout = options.timeout;
+        return handleError(e, op, Promise.reject.bind(Promise));
+      }
+    );
     return promise.then(
       async value => {
-        await interceptCompletedOperation(op, options, startTime);
+        await interceptCompletedOperation(op, options, startTime, undefined, undefined, endTime);
         return value;
       },
       async error => {
         try {
-          await interceptCompletedOperation(op, options, startTime, undefined, error);
+          await interceptCompletedOperation(op, options, startTime, undefined, error, endTime);
         } catch (interceptorError) {
           attachInterceptorError(error, interceptorError);
         }
@@ -1154,9 +1162,10 @@ async function interceptCompletedOperation(
   startTime = performance.now(),
   tries?: number,
   error?: Error,
+  endTime = performance.now(),
   transaction?: TransactionMetadata
 ) {
-  const elapsed = performance.now() - startTime;
+  const elapsed = transaction?.duration ?? endTime - startTime;
   _.assign(op, {
     startTime,
     duration: elapsed / (tries || 1),

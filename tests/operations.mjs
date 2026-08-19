@@ -1,13 +1,26 @@
 import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
 import {performance} from 'node:perf_hooks';
 import {test} from 'node:test';
 import {setImmediate, setTimeout} from 'node:timers';
 
 import _ from 'lodash';
 
-import NodeFireModule from '../built/index.js';
+const require = createRequire(import.meta.url);
+const FirefightModule = require('firefight');
+let permissionDiagnostic = Promise.resolve('permission trace');
+let permissionDiagnosticStartTime;
+FirefightModule.Simulator = class {
+  isPermissionDenied(error) {
+    return error.code === 'PERMISSION_DENIED';
+  }
 
-const {default: NodeFire} = NodeFireModule;
+  auth() {
+    permissionDiagnosticStartTime = performance.now();
+    return {set: () => permissionDiagnostic};
+  }
+};
+const {default: NodeFire} = require('../built/index.js');
 let appCounter = 0;
 let beforeInterceptor = _.noop;
 let afterInterceptor = _.noop;
@@ -128,6 +141,40 @@ test('after interceptor failures propagate from successful operations', async t 
 
   const ref = new NodeFire(new FakeReference('/writes'));
   await assert.rejects(ref.set('value'), error => error === interceptorError);
+});
+
+test('permission diagnostics do not add to operation duration', async t => {
+  t.after(resetInterceptors);
+  let resolveDiagnostic;
+  permissionDiagnostic = new Promise(resolve => {resolveDiagnostic = resolve;});
+  t.after(() => {permissionDiagnostic = Promise.resolve('permission trace');});
+  const database = {
+    app: {
+      name: `operations-test-${++appCounter}`,
+      options: {databaseAuthVariableOverride: {uid: 'test'}}
+    },
+    ref: _.constant({toString: _.constant('https://operations-test.firebaseio.com/')})
+  };
+  const permissionError = _.assign(new Error('permission_denied'), {
+    code: 'PERMISSION_DENIED'
+  });
+  const ref = new NodeFire(new FakeReference('/writes', {
+    set: () => Promise.reject(permissionError)
+  }, database));
+  ref.enablePermissionDebugging('secret');
+  t.after(() => ref.enablePermissionDebugging(null));
+  let descriptor;
+  afterInterceptor = op => {descriptor = op;};
+
+  let settled = false;
+  const promise = ref.set('value');
+  promise.then(() => {settled = true;}, () => {settled = true;});
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.strictEqual(settled, false);
+  resolveDiagnostic('permission trace');
+  await assert.rejects(promise, error => error === permissionError);
+  assert.strictEqual(descriptor.error.firebase.permissionTrace, 'permission trace');
+  assert.ok(descriptor.startTime + descriptor.duration <= permissionDiagnosticStartTime + 5);
 });
 
 test('transaction duration is averaged across tries', async t => {
