@@ -209,7 +209,7 @@ test('permission diagnostics do not add to operation duration', async t => {
   assert.ok(descriptor.startTime + descriptor.duration <= permissionDiagnosticStartTime + 5);
 });
 
-test('transaction duration is averaged across tries', async t => {
+test('transaction duration spans all tries but excludes prefetch', async t => {
   t.after(resetInterceptors);
   let descriptor;
   afterInterceptor = op => {descriptor = op;};
@@ -228,8 +228,9 @@ test('transaction duration is averaged across tries', async t => {
   assert.strictEqual(result, 'committed');
   assert.strictEqual(descriptor.transaction.outcome, 'commit');
   assert.strictEqual(descriptor.transaction.tries, 2);
-  assert.ok(descriptor.duration >= 10);
-  assert.ok(descriptor.duration < 30);
+  assert.strictEqual(descriptor.transaction.prefetchDuration, undefined);
+  assert.strictEqual(descriptor.duration, descriptor.transaction.duration);
+  assert.ok(descriptor.duration >= 20);
 });
 
 test('transactions cancelled during prefetch omit operation timing', async t => {
@@ -250,6 +251,7 @@ test('transactions cancelled during prefetch omit operation timing', async t => 
   assert.strictEqual(operationCalled, false);
   assert.strictEqual(descriptor.startTime, undefined);
   assert.strictEqual(descriptor.duration, undefined);
+  assert.ok(descriptor.transaction.prefetchDuration >= 0);
   assert.strictEqual(descriptor.transaction.duration, undefined);
 });
 

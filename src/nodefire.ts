@@ -25,7 +25,7 @@ export interface OperationDescriptor {
   readonly args: any[];
   /** `performance.now()` when the Firebase operation started, if it was attempted. */
   readonly startTime?: number;
-  /** Firebase operation duration in milliseconds, if attempted.  Transactions average per try. */
+  /** Firebase operation duration in milliseconds, if attempted. */
   readonly duration?: number;
   /** The operation error, if any.  Only present after completion. */
   readonly error?: Error;
@@ -85,6 +85,7 @@ export interface NodeFireError extends Error {
 export interface TransactionMetadata {
   outcome?: 'commit' | 'error' | 'skip';
   tries?: number;
+  /** Prefetch duration in milliseconds, if prefetching was attempted. */
   prefetchDuration?: number;
   /** Firebase transaction duration, excluding prefetch; absent if no transaction was attempted. */
   duration?: number;
@@ -518,23 +519,25 @@ export default class NodeFire<
     options = options ?? {};
     let tries = 0, result: any;
     const startTime = performance.now();
-    let prefetchDoneTime: number | undefined;
+    let transactionStartTime: number | undefined;
     const metadata: TransactionMetadata = {};
-
-    function fillMetadata(outcome: NonNullable<TransactionMetadata['outcome']>) {
-      if (metadata.outcome) return;
-      metadata.outcome = outcome;
-      metadata.tries = tries;
-      if (prefetchDoneTime !== undefined) {
-        metadata.prefetchDuration = prefetchDoneTime - startTime;
-        metadata.duration = performance.now() - prefetchDoneTime;
-      }
-    }
 
     type OperationResult = ReadValue<Root> | null | undefined;
     const op: OperationDescriptor = {ref: this, method: 'transaction', args: [updateFunction]};
 
     const promise = runOperationInterceptors('before', op, options).then(() => {
+      const prefetch = options!.prefetchValue ?? true;
+      function fillMetadata(outcome: NonNullable<TransactionMetadata['outcome']>) {
+        if (metadata.outcome) return;
+        const endTime = performance.now();
+        metadata.outcome = outcome;
+        metadata.tries = tries;
+        if (prefetch) {
+          metadata.prefetchDuration = (transactionStartTime ?? endTime) - startTime;
+        }
+        if (transactionStartTime !== undefined) metadata.duration = endTime - transactionStartTime;
+      }
+
       const operationPromise = new Promise<OperationResult>((resolve, reject) => {
         const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
         let wrappedReject = wrappedRejectNoResult;
@@ -579,7 +582,7 @@ export default class NodeFire<
 
         let onceTxn, timeout: Timeout;
         function txn() {
-          prefetchDoneTime ??= performance.now();
+          transactionStartTime ??= performance.now();
           try {
             self.$ref.ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
               if (error && (error.message === 'set' || error.message === 'disconnect')) {
@@ -616,14 +619,17 @@ export default class NodeFire<
             wrappedReject(_.assign(new Error('timeout'), {options, op}));
           }, options.timeout);
         }
-        if (options?.prefetchValue || options?.prefetchValue === undefined) {
+        if (prefetch) {
           // Prefetch the data and keep it "live" during the transaction, to avoid running the
           // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
           // data from the server.  Also pull it into the cache to speed future transactions at
           // this ref.
           self.cache();
           onceTxn = _.once(txn);
-          self.$ref.on('value', onceTxn, wrappedRejectNoResult);
+          self.$ref.on('value', onceTxn, error => {
+            fillMetadata('error');
+            wrappedRejectNoResult(error);
+          });
         } else {
           txn();
         }
@@ -631,13 +637,13 @@ export default class NodeFire<
       return operationPromise.then(
         async value => {
           await interceptCompletedOperation(
-            op, options!, prefetchDoneTime, metadata.tries, undefined, undefined, metadata);
+            op, options!, transactionStartTime, undefined, undefined, metadata);
           return value;
         },
         async error => {
           try {
             await interceptCompletedOperation(
-              op, options!, prefetchDoneTime, metadata.tries, error, undefined, metadata);
+              op, options!, transactionStartTime, error, undefined, metadata);
           } catch (interceptorError) {
             attachInterceptorError(error, interceptorError);
           }
@@ -1131,12 +1137,12 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
     );
     return promise.then(
       async value => {
-        await interceptCompletedOperation(op, options, startTime, undefined, undefined, endTime);
+        await interceptCompletedOperation(op, options, startTime, undefined, endTime);
         return value;
       },
       async error => {
         try {
-          await interceptCompletedOperation(op, options, startTime, undefined, error, endTime);
+          await interceptCompletedOperation(op, options, startTime, error, endTime);
         } catch (interceptorError) {
           attachInterceptorError(error, interceptorError);
         }
@@ -1150,14 +1156,13 @@ async function interceptCompletedOperation(
   op: OperationDescriptor,
   options: any,
   startTime?: number,
-  tries?: number,
   error?: Error,
   endTime = performance.now(),
   transaction?: TransactionMetadata
 ) {
   const timing = startTime === undefined ? {} : {
     startTime,
-    duration: (transaction?.duration ?? endTime - startTime) / (tries || 1)
+    duration: transaction?.duration ?? endTime - startTime
   };
   _.assign(op, {
     ...timing,
