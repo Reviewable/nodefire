@@ -46,7 +46,7 @@
     "@types/safe-timers": "^1.1.0",
     "eslint": "^10.7.0",
     "npm-check-updates": "^22.2.9",
-    "reviewable-configs": "Reviewable/reviewable-configs#master",
+    "reviewable-configs": "github:Reviewable/reviewable-configs#master",
     "typescript": "^5.4.0"
   }
 }
