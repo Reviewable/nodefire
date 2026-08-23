@@ -582,6 +582,7 @@ export default class NodeFire<
 
         let onceTxn, timeout: Timeout;
         function txn() {
+          if (aborted) return;
           transactionStartTime ??= performance.now();
           try {
             self.$ref.ref.transaction(wrappedUpdateFunction, (error, committed, snap) => {
@@ -615,6 +616,7 @@ export default class NodeFire<
           timeout = setTimeout(() => {
             if (settled) return;
             aborted = true;
+            if (onceTxn) self.$ref.off('value', onceTxn);
             fillMetadata('error');
             wrappedReject(_.assign(new Error('timeout'), {options, op}));
           }, options.timeout);

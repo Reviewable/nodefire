@@ -255,6 +255,35 @@ test('transactions cancelled during prefetch omit operation timing', async t => 
   assert.strictEqual(descriptor.transaction.duration, undefined);
 });
 
+test('transaction timeouts prevent a late prefetch from starting Firebase work', async t => {
+  t.after(resetInterceptors);
+  let descriptor;
+  let prefetchCallback;
+  let operationCalls = 0;
+  afterInterceptor = op => {descriptor = op;};
+
+  const ref = new NodeFire(new FakeReference('/writes', {
+    on: (event, callback) => {prefetchCallback = callback;},
+    transaction: () => {
+      operationCalls++;
+      return Promise.resolve();
+    }
+  }));
+  await assert.rejects(
+    ref.transaction(_.constant('committed'), {timeout: 10}),
+    /Firebase: timeout/
+  );
+  assert.strictEqual(operationCalls, 0);
+
+  prefetchCallback();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(operationCalls, 0);
+  assert.strictEqual(descriptor.startTime, undefined);
+  assert.strictEqual(descriptor.duration, undefined);
+  assert.ok(descriptor.transaction.prefetchDuration >= 0);
+  assert.strictEqual(descriptor.transaction.duration, undefined);
+});
+
 test('transactions blocked by before interceptors do not invoke after interceptors', async t => {
   t.after(resetInterceptors);
   const interceptorError = new Error('blocked');
