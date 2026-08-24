@@ -3143,7 +3143,7 @@ __metadata:
     lodash: "npm:^4.17.21"
     lru-cache: "npm:11.x"
     npm-check-updates: "npm:^22.2.9"
-    reviewable-configs: "Reviewable/reviewable-configs#master"
+    reviewable-configs: "github:Reviewable/reviewable-configs#master"
     safe-timers: "npm:^1.1.0"
     typescript: "npm:^5.4.0"
   languageName: unknown
@@ -3509,9 +3509,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"reviewable-configs@Reviewable/reviewable-configs#master":
+"reviewable-configs@github:Reviewable/reviewable-configs#master":
   version: 1.0.0
-  resolution: "reviewable-configs@https://github.com/Reviewable/reviewable-configs.git#commit=417898ff0fc410e5223f84f3d5abfb6c1a947685"
+  resolution: "reviewable-configs@https://github.com/Reviewable/reviewable-configs.git#commit=f0036889d2c4a330c79d7455066832dcd0f1216a"
   dependencies:
     "@eslint/compat": "npm:^2.1.0"
     "@eslint/js": "npm:^10.0.1"
@@ -3522,7 +3522,7 @@ __metadata:
     typescript-eslint: "npm:^8.7.0"
   bin:
     reviewable-upgrade: ./bin/reviewable-upgrade.mjs
-  checksum: 10c0/e98e73d6f740f0beacd2ea482bf29022115eccf3c9bb67082955333236cdf6c878c5de8274f1b6c5003336f1605c8b7465ccb951d0eee021f236633fb870141e
+  checksum: 10c0/de45d7769872a0196c963a2848b559d544387de7550da9889b4e27980ec1dc937a108950c08f081e2881d983df8fa1bd7f645e12fa0bb0a70b2fea47a9033c0b
   languageName: node
   linkType: hard
 

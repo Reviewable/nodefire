@@ -1,5 +1,8 @@
 import type {Reference} from 'firebase-admin/database';
-import NodeFire, {type CacheStats, type ChildNodeFireOf} from '../src';
+import NodeFire, {
+  type CacheStats, type ChildNodeFireOf, type InterceptOperationsCallback,
+  type OperationDescriptor, type OperationInterceptorTrigger
+} from '../src';
 
 type Equal<Left, Right> =
   (<T>() => T extends Left ? 1 : 2) extends
@@ -32,6 +35,20 @@ const unusedCacheHits: number = unusedCacheStats.hits;
 const unusedCacheMisses: number = unusedCacheStats.misses;
 const unusedCacheHitRate: number = unusedCacheStats.hitRate;
 NodeFire.resetCacheStats();
+const beforeTrigger: OperationInterceptorTrigger = 'before';
+const afterTrigger: OperationInterceptorTrigger = 'after';
+const interceptor: InterceptOperationsCallback = async (op, options) => {
+  const descriptor: OperationDescriptor = op;
+  const unusedDuration: number | undefined = descriptor.duration;
+  const unusedStartTime: number | undefined = descriptor.startTime;
+  const unusedError: unknown = descriptor.error;
+  const unusedTries: number | undefined = descriptor.transaction?.tries;
+  options.extra = true;
+  await Promise.resolve([unusedDuration, unusedStartTime, unusedError, unusedTries]);
+};
+NodeFire.interceptOperations(interceptor, beforeTrigger);
+NodeFire.interceptOperations(interceptor, afterTrigger);
+NodeFire.interceptOperations(interceptor);
 type UntypedParentResult = Expect<
   Equal<GetResult<NonNullable<typeof untyped.parent>>, unknown>
 >;
