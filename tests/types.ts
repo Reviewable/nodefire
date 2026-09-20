@@ -28,6 +28,8 @@ interface Database {
 
 declare const reference: Reference;
 const untyped = new NodeFire(reference);
+void untyped.get({timeout: 1000, cache: false, debugPermissionDenied: false});
+untyped.on('value', snap => snap.val(), undefined, undefined, {debugPermissionDenied: false});
 void untyped.set({value: 1}, {timeout: 1000, debugPermissionDenied: false});
 void untyped.update({value: 1}, {timeout: 1000, debugPermissionDenied: false});
 void untyped.remove({timeout: 1000, debugPermissionDenied: false});

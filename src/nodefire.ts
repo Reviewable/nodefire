@@ -91,7 +91,7 @@ export interface TransactionMetadata {
   duration?: number;
 }
 
-export interface WriteOptions {
+export interface OperationOptions {
   timeout?: number;
   /** Set to false to skip permission diagnostics for expected rejections. Defaults to true. */
   debugPermissionDenied?: boolean;
@@ -357,11 +357,11 @@ export default class NodeFire<
   /**
    * Gets this reference's current value from Firebase, and inserts it into the cache if a
    * maxCacheSize was set and the `cache` option is not false.
-   * @param options
+   * @param options Set debugPermissionDenied to false to skip permission diagnostics.
    * @return A promise that is resolved to the reference's value, or rejected with an
    *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
-  get(options?: {timeout?: number, cache?: boolean}): Promise<ReadValue<Root> | null> {
+  get(options?: OperationOptions & {cache?: boolean}): Promise<ReadValue<Root> | null> {
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       (opts: {cache?: boolean}) => {
@@ -423,11 +423,11 @@ export default class NodeFire<
    * @returns {Promise<void>} A promise that is resolved when the value has been set,
    * or rejected with an error.
    */
-  set(value: WriteRoot | null, options?: WriteOptions): Promise<void>;
-  set(value: unknown, options: WriteOptions & {unchecked: true}): Promise<void>;
+  set(value: WriteRoot | null, options?: OperationOptions): Promise<void>;
+  set(value: unknown, options: OperationOptions & {unchecked: true}): Promise<void>;
   set(
     value: unknown,
-    options: WriteOptions & {unchecked?: boolean} = {}
+    options: OperationOptions & {unchecked?: boolean} = {}
   ): Promise<void> {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
@@ -445,7 +445,7 @@ export default class NodeFire<
    * or rejected with an error.
    */
   update(
-    value: UpdateShape<WriteRoot>, options?: WriteOptions
+    value: UpdateShape<WriteRoot>, options?: OperationOptions
   ): Promise<void> {
     if (_.isPlainObject(value) && _.isEmpty(value)) return Promise.resolve();
     return invoke(
@@ -460,7 +460,7 @@ export default class NodeFire<
    * @return {Promise} A promise that is resolved when the value has been removed, or rejected with
    *     an error.
    */
-  remove(options?: WriteOptions): Promise<any> {
+  remove(options?: OperationOptions): Promise<any> {
     return invoke(
       {ref: this, method: 'remove', args: []}, options,
       (opts: any) => this.$ref.ref.remove()
@@ -476,7 +476,7 @@ export default class NodeFire<
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
   push(
-    value: PushValue<WriteRoot> | null, options?: WriteOptions
+    value: PushValue<WriteRoot> | null, options?: OperationOptions
   ): Promise<NoInfer<PushedNodeFire<this, Root, WriteSpecialRules, WriteRoot>>> {
     if (_.isNil(value)) {
       return Promise.resolve(
@@ -521,7 +521,7 @@ export default class NodeFire<
    */
   transaction<T extends WriteRoot | null | undefined>(
     updateFunction: (value: ReadValue<Root> | null) => T,
-    options?: WriteOptions & {
+    options?: OperationOptions & {
       detectStuck?: number,
       prefetchValue?: boolean
     }
@@ -680,13 +680,16 @@ export default class NodeFire<
    * @param callback
    * @param cancelCallback
    * @param context
+   * @param options Set debugPermissionDenied to false to skip permission diagnostics when the
+   *     listener is cancelled.
    */
   on(
     eventType: EventType,
     callback: (a: Snapshot<Root>, b?: string) => any,
-    cancelCallback?: ((a: Error) => any), context?: object
+    cancelCallback?: ((a: Error) => any), context?: object,
+    options: Pick<OperationOptions, 'debugPermissionDenied'> = {}
   ): (a: Snapshot<Root>, b?: string) => any {
-    cancelCallback = wrapReject(this, 'on', [], cancelCallback);
+    cancelCallback = wrapReject(this, 'on', [], cancelCallback, options.debugPermissionDenied);
     this.$ref.on(
       eventType, captureCallback(this, eventType, callback), cancelCallback, context);
     return callback;
@@ -1116,7 +1119,7 @@ function getNormalRawValue<T>(value: T): ReadValue<T> {
   return value as ReadValue<T>;
 }
 
-function invoke(op, options: WriteOptions = {}, fn) {
+function invoke(op, options: OperationOptions = {}, fn) {
   options = options ?? {};
   return runOperationInterceptors('before', op, options).then(() => {
     const startTime = performance.now();

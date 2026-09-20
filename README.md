@@ -79,14 +79,18 @@ widened runtime child path has an `unknown` value and parent type, while its `ro
 ## Expected permission rejections
 
 When permission debugging is enabled, rejected operations normally wait for a serialized
-Firefight simulation before returning the error. All write methods (`set`, `update`, `remove`,
-`push`, and `transaction`) accept `{debugPermissionDenied: false}` for expected permission
-rejections. This returns the original Firebase error without running that diagnostic simulation,
-including when a transaction's prefetch fails. Firebase security rules, error metadata, operation
-interceptors, and diagnostics for operations without the opt-out are unchanged.
+Firefight simulation before returning the error. All methods that invoke the permission debugger
+(`get`, `on`, `set`, `update`, `remove`, `push`, and `transaction`) accept an options object with
+`{debugPermissionDenied: false}` for expected permission rejections. This returns the original
+Firebase error without running that diagnostic simulation, including when a transaction's
+prefetch fails or a listener is cancelled. For `on`, the options argument follows the existing
+`context` argument. Firebase security rules, error metadata, operation interceptors, and
+diagnostics for operations without the opt-out are unchanged.
 
 ```js
 await ref.update(value, {timeout: 10000, debugPermissionDenied: false});
+await ref.get({debugPermissionDenied: false});
+ref.on('value', callback, cancelCallback, undefined, {debugPermissionDenied: false});
 ```
 
 ## API
@@ -276,7 +280,7 @@ childRaw(path)
  *     The value returned is normalized: arrays are converted to objects, and the value's priority
  *     (if any) is set on a ".priority" attribute if the value is an object.
  */
-get()
+get(options)
 
 /**
  * Adds this reference to the cache (if maxCacheSize set) and counts a cache hit or miss.
@@ -390,7 +394,7 @@ toString()
         on which on() was called.
      3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
 */
-on(eventType, callback, cancelCallback, context)
+on(eventType, callback, cancelCallback, context, options)
 off(eventType, callback, context)
 
 /* Query methods which work the same as in the Firebase Admin SDK. */

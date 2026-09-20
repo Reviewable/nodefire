@@ -17,7 +17,8 @@ FirefightModule.Simulator = class {
 
   auth() {
     permissionDiagnosticStartTime = performance.now();
-    return Object.fromEntries(_.map(['set', 'update', 'remove', 'push', 'transaction'],
+    return Object.fromEntries(_.map(
+      ['once', 'on', 'set', 'update', 'remove', 'push', 'transaction'],
       method => [method, () => permissionDiagnostic]));
   }
 };
@@ -67,7 +68,7 @@ class FakeReference {
     return this.database === other.database && this.path === other.path;
   }
 
-  on(event, callback, cancelCallback) {
+  on(event, callback, cancelCallback, context) {
     if (_.endsWith(this.path, '/.info/serverTimeOffset')) {
       callback({val: _.constant(0)});
       return;
@@ -76,10 +77,14 @@ class FakeReference {
       callback({val: _.constant(true)});
       return;
     }
-    this.operations.on?.(event, callback, cancelCallback);
+    this.operations.on?.(event, callback, cancelCallback, context);
   }
 
   off() {/* Nothing to detach in the fake reference. */}
+
+  once(event) {
+    return this.operations.once?.(event);
+  }
 
   set(value) {
     return this.operations.set?.(value) ?? Promise.resolve();
@@ -320,7 +325,7 @@ test('transactions blocked by before interceptors do not invoke after intercepto
 });
 
 _.forEach([
-  'set', 'unchecked set', 'update', 'remove', 'push', 'transaction',
+  'get', 'on', 'set', 'unchecked set', 'update', 'remove', 'push', 'transaction',
   'transaction before update', 'transaction prefetch'
 ], kind => {
   test(`expected ${kind} rejections bypass a pending permission diagnostic`, async t => {
@@ -336,18 +341,23 @@ _.forEach([
       ref: _.constant({toString: _.constant('https://operations-test.firebaseio.com/')})
     };
     const makeError = () => _.assign(new Error('permission_denied'), {code: 'PERMISSION_DENIED'});
-    const rejectWrite = () => Promise.reject(makeError());
-    const ref = new NodeFire(new FakeReference('/writes', {
-      set: rejectWrite,
-      update: rejectWrite,
-      remove: rejectWrite,
-      push: rejectWrite,
+    const rejectOperation = () => Promise.reject(makeError());
+    const context = {kind};
+    const ref = new NodeFire(new FakeReference('/operations', {
+      once: rejectOperation,
+      set: rejectOperation,
+      update: rejectOperation,
+      remove: rejectOperation,
+      push: rejectOperation,
       transaction: (updateFunction, callback) => {
         if (kind !== 'transaction before update') updateFunction(null);
         callback(makeError(), false, null);
         return Promise.resolve();
       },
-      on: (event, callback, cancelCallback) => cancelCallback(makeError())
+      on: (event, callback, cancelCallback, listenerContext) => {
+        if (kind === 'on') assert.strictEqual(listenerContext, context);
+        cancelCallback(makeError());
+      }
     }, database));
     ref.enablePermissionDebugging('secret');
     t.after(() => ref.enablePermissionDebugging(null));
@@ -355,7 +365,14 @@ _.forEach([
     afterInterceptor = op => {observed.push(op);};
     const method = _.startsWith(kind, 'transaction') ? 'transaction' :
       kind === 'unchecked set' ? 'set' : kind;
-    const write = options => {
+    const operate = options => {
+      if (method === 'get') return ref.get(options);
+      if (method === 'on') {
+        return new Promise((resolve, reject) => {
+          const callback = _.noop;
+          assert.strictEqual(ref.on('value', callback, reject, context, options), callback);
+        });
+      }
       if (method === 'transaction') {
         return ref.transaction(_.constant({value: 1}), {
           prefetchValue: kind === 'transaction prefetch', ...options
@@ -368,20 +385,20 @@ _.forEach([
     };
 
     let diagnosticError, expectedError;
-    const ordinary = write().catch(error => {diagnosticError = error;});
-    const expected = write({debugPermissionDenied: false})
+    const ordinary = operate().catch(error => {diagnosticError = error;});
+    const expected = operate({debugPermissionDenied: false})
       .catch(error => {expectedError = error;});
     await new Promise(resolve => setImmediate(resolve));
     try {
       assert.strictEqual(diagnosticError, undefined);
       assert.strictEqual(expectedError?.code, 'PERMISSION_DENIED');
       assert.strictEqual(expectedError.firebase.method, method);
-      assert.deepStrictEqual(expectedError.firebase.args,
-        _.includes(['remove', 'transaction before update', 'transaction prefetch'], kind) ?
-          [] : [{value: 1}]);
+      const noArgs = ['get', 'on', 'remove', 'transaction before update', 'transaction prefetch'];
+      assert.deepStrictEqual(
+        expectedError.firebase.args, _.includes(noArgs, kind) ? [] : [{value: 1}]);
       assert.strictEqual(expectedError.firebase.permissionTrace, undefined);
-      assert.strictEqual(observed.length, 1);
-      assert.strictEqual(observed[0].error, expectedError);
+      assert.strictEqual(observed.length, method === 'on' ? 0 : 1);
+      if (method !== 'on') assert.strictEqual(observed[0].error, expectedError);
     } finally {
       resolveDiagnostic('permission trace');
       await Promise.all([ordinary, expected]);
