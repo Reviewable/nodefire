@@ -28,7 +28,13 @@ interface Database {
 
 declare const reference: Reference;
 const untyped = new NodeFire(reference);
+void untyped.set({value: 1}, {timeout: 1000, debugPermissionDenied: false});
 void untyped.update({value: 1}, {timeout: 1000, debugPermissionDenied: false});
+void untyped.remove({timeout: 1000, debugPermissionDenied: false});
+void untyped.push({value: 1}, {timeout: 1000, debugPermissionDenied: false});
+void untyped.transaction(value => value, {
+  timeout: 1000, debugPermissionDenied: false, prefetchValue: false
+});
 const unusedCacheStats: CacheStats = NodeFire.getCacheStats();
 const unusedCacheCount: number = unusedCacheStats.count;
 const unusedCacheMaxSize: number = unusedCacheStats.maxSize;
@@ -58,6 +64,9 @@ const unusedTypedAsUntyped: NodeFire = db;
 const unusedUntypedAsTyped: NodeFire<Database> = untyped;
 
 const user = db.child('organizations/:organization/users/:user');
+void user.set({unexpectedField: true}, {unchecked: true, debugPermissionDenied: false});
+// @ts-expect-error Permission diagnostics do not bypass schema checking.
+void user.set({unexpectedField: true}, {debugPermissionDenied: false});
 type UserResult = Expect<Equal<GetResult<typeof user>, User | null>>;
 const unusedTransaction = user.transaction(value => value);
 type TransactionResult = Expect<Equal<

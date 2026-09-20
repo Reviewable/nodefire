@@ -17,7 +17,8 @@ FirefightModule.Simulator = class {
 
   auth() {
     permissionDiagnosticStartTime = performance.now();
-    return {set: () => permissionDiagnostic, update: () => permissionDiagnostic};
+    return Object.fromEntries(_.map(['set', 'update', 'remove', 'push', 'transaction'],
+      method => [method, () => permissionDiagnostic]));
   }
 };
 const {default: NodeFire} = require('../built/index.js');
@@ -86,6 +87,14 @@ class FakeReference {
 
   update(value) {
     return this.operations.update?.(value) ?? Promise.resolve();
+  }
+
+  remove() {
+    return this.operations.remove?.() ?? Promise.resolve();
+  }
+
+  push(value) {
+    return this.operations.push?.(value);
   }
 
   transaction(updateFunction, callback) {
@@ -310,43 +319,73 @@ test('transactions blocked by before interceptors do not invoke after intercepto
   assert.strictEqual(afterCalled, false);
 });
 
-test('expected update rejections bypass a pending permission diagnostic', async t => {
-  t.after(resetInterceptors);
-  let resolveDiagnostic;
-  permissionDiagnostic = new Promise(resolve => {resolveDiagnostic = resolve;});
-  t.after(() => {permissionDiagnostic = Promise.resolve('permission trace');});
-  const database = {
-    app: {
-      name: `operations-test-${++appCounter}`,
-      options: {databaseAuthVariableOverride: {uid: 'test'}}
-    },
-    ref: _.constant({toString: _.constant('https://operations-test.firebaseio.com/')})
-  };
-  const ref = new NodeFire(new FakeReference('/writes', {
-    update: () => Promise.reject(_.assign(new Error('permission_denied'), {
-      code: 'PERMISSION_DENIED'
-    }))
-  }, database));
-  ref.enablePermissionDebugging('secret');
-  t.after(() => ref.enablePermissionDebugging(null));
-  const observed = [];
-  afterInterceptor = op => {observed.push(op);};
+_.forEach([
+  'set', 'unchecked set', 'update', 'remove', 'push', 'transaction',
+  'transaction before update', 'transaction prefetch'
+], kind => {
+  test(`expected ${kind} rejections bypass a pending permission diagnostic`, async t => {
+    t.after(resetInterceptors);
+    let resolveDiagnostic;
+    permissionDiagnostic = new Promise(resolve => {resolveDiagnostic = resolve;});
+    t.after(() => {permissionDiagnostic = Promise.resolve('permission trace');});
+    const database = {
+      app: {
+        name: `operations-test-${++appCounter}`,
+        options: {databaseAuthVariableOverride: {uid: 'test'}}
+      },
+      ref: _.constant({toString: _.constant('https://operations-test.firebaseio.com/')})
+    };
+    const makeError = () => _.assign(new Error('permission_denied'), {code: 'PERMISSION_DENIED'});
+    const rejectWrite = () => Promise.reject(makeError());
+    const ref = new NodeFire(new FakeReference('/writes', {
+      set: rejectWrite,
+      update: rejectWrite,
+      remove: rejectWrite,
+      push: rejectWrite,
+      transaction: (updateFunction, callback) => {
+        if (kind !== 'transaction before update') updateFunction(null);
+        callback(makeError(), false, null);
+        return Promise.resolve();
+      },
+      on: (event, callback, cancelCallback) => cancelCallback(makeError())
+    }, database));
+    ref.enablePermissionDebugging('secret');
+    t.after(() => ref.enablePermissionDebugging(null));
+    const observed = [];
+    afterInterceptor = op => {observed.push(op);};
+    const method = _.startsWith(kind, 'transaction') ? 'transaction' :
+      kind === 'unchecked set' ? 'set' : kind;
+    const write = options => {
+      if (method === 'transaction') {
+        return ref.transaction(_.constant({value: 1}), {
+          prefetchValue: kind === 'transaction prefetch', ...options
+        });
+      }
+      if (method === 'remove') return ref.remove(options);
+      return ref[method]({value: 1}, {
+        ...kind === 'unchecked set' && {unchecked: true}, ...options
+      });
+    };
 
-  let diagnosticError, expectedError;
-  const ordinary = ref.update({value: 1}).catch(error => {diagnosticError = error;});
-  const expected = ref.update({value: 2}, {debugPermissionDenied: false})
-    .catch(error => {expectedError = error;});
-  await new Promise(resolve => setImmediate(resolve));
-  try {
-    assert.strictEqual(diagnosticError, undefined);
-    assert.strictEqual(expectedError?.code, 'PERMISSION_DENIED');
-    assert.strictEqual(expectedError.firebase.method, 'update');
-    assert.strictEqual(expectedError.firebase.permissionTrace, undefined);
-    assert.strictEqual(observed.length, 1);
-    assert.strictEqual(observed[0].error, expectedError);
-  } finally {
-    resolveDiagnostic('permission trace');
-    await Promise.all([ordinary, expected]);
-  }
-  assert.strictEqual(diagnosticError.firebase.permissionTrace, 'permission trace');
+    let diagnosticError, expectedError;
+    const ordinary = write().catch(error => {diagnosticError = error;});
+    const expected = write({debugPermissionDenied: false})
+      .catch(error => {expectedError = error;});
+    await new Promise(resolve => setImmediate(resolve));
+    try {
+      assert.strictEqual(diagnosticError, undefined);
+      assert.strictEqual(expectedError?.code, 'PERMISSION_DENIED');
+      assert.strictEqual(expectedError.firebase.method, method);
+      assert.deepStrictEqual(expectedError.firebase.args,
+        _.includes(['remove', 'transaction before update', 'transaction prefetch'], kind) ?
+          [] : [{value: 1}]);
+      assert.strictEqual(expectedError.firebase.permissionTrace, undefined);
+      assert.strictEqual(observed.length, 1);
+      assert.strictEqual(observed[0].error, expectedError);
+    } finally {
+      resolveDiagnostic('permission trace');
+      await Promise.all([ordinary, expected]);
+    }
+    assert.strictEqual(diagnosticError.firebase.permissionTrace, 'permission trace');
+  });
 });

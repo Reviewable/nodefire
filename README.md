@@ -79,14 +79,16 @@ widened runtime child path has an `unknown` value and parent type, while its `ro
 ## Expected permission rejections
 
 When permission debugging is enabled, rejected operations normally wait for a serialized
-Firefight simulation before returning the error. For an `update` whose permission rejection is
-an expected concurrency check, pass `{debugPermissionDenied: false}` to return the original
-Firebase error without running that diagnostic simulation. Firebase security rules, error
-metadata, operation interceptors, and diagnostics for other operations are unchanged.
+Firefight simulation before returning the error. All write methods (`set`, `update`, `remove`,
+`push`, and `transaction`) accept `{debugPermissionDenied: false}` for expected permission
+rejections. This returns the original Firebase error without running that diagnostic simulation,
+including when a transaction's prefetch fails. Firebase security rules, error metadata, operation
+interceptors, and diagnostics for operations without the opt-out are unchanged.
 
 ```js
 await ref.update(value, {timeout: 10000, debugPermissionDenied: false});
 ```
+
 ## API
 
 This is reproduced from the source code, which is authoritative.
@@ -294,7 +296,7 @@ uncache()
  * @returns {Promise} A promise that is resolved when the value has been set, or rejected with an
  *     error.
  */
-set(value)
+set(value, options)
 
 /**
  * Updates a value at this reference, setting only the top-level keys supplied and leaving any other
@@ -303,14 +305,14 @@ set(value)
  * @return {Promise} A promise that is resolved when the value has been updated, or rejected with an
  *     error.
  */
-update(value)
+update(value, options)
 
 /**
  * Removes this reference from the Firebase.
  * @return {Promise} A promise that is resolved when the value has been removed, or rejected with an
  *     error.
  */
-remove()
+remove(options)
 
 /**
  * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
@@ -319,7 +321,7 @@ remove()
  * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
  *     pushed value (with the same scope as this object), or rejected with an error.
  */
-push(value)
+push(value, options)
 
 /**
  * Runs a transaction at this reference.  The transaction is not applied locally first, since this
@@ -341,6 +343,8 @@ push(value)
  *         the transaction is in progress.  Defaults to true.
  *     {number} timeout A number of milliseconds after which to time out the transaction and
  *         reject the promise with 'timeout'.
+ *     {boolean} debugPermissionDenied Set to false to skip permission diagnostics, including
+ *         prefetch failures. Defaults to true.
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */

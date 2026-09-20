@@ -91,6 +91,12 @@ export interface TransactionMetadata {
   duration?: number;
 }
 
+export interface WriteOptions {
+  timeout?: number;
+  /** Set to false to skip permission diagnostics for expected rejections. Defaults to true. */
+  debugPermissionDenied?: boolean;
+}
+
 export interface TransactionPromise<T> extends Promise<T> {
   transaction: TransactionMetadata;
 }
@@ -413,15 +419,15 @@ export default class NodeFire<
   /**
    * Sets the value at this reference.
    * @param value The value to set.
-   * @param options
+   * @param options Set debugPermissionDenied to false to skip permission diagnostics.
    * @returns {Promise<void>} A promise that is resolved when the value has been set,
    * or rejected with an error.
    */
-  set(value: WriteRoot | null, options?: {timeout?: number}): Promise<void>;
-  set(value: unknown, options: {timeout?: number, unchecked: true}): Promise<void>;
+  set(value: WriteRoot | null, options?: WriteOptions): Promise<void>;
+  set(value: unknown, options: WriteOptions & {unchecked: true}): Promise<void>;
   set(
     value: unknown,
-    options: {timeout?: number, unchecked?: boolean} = {}
+    options: WriteOptions & {unchecked?: boolean} = {}
   ): Promise<void> {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
@@ -439,7 +445,7 @@ export default class NodeFire<
    * or rejected with an error.
    */
   update(
-    value: UpdateShape<WriteRoot>, options?: {timeout?: number, debugPermissionDenied?: boolean}
+    value: UpdateShape<WriteRoot>, options?: WriteOptions
   ): Promise<void> {
     if (_.isPlainObject(value) && _.isEmpty(value)) return Promise.resolve();
     return invoke(
@@ -450,10 +456,11 @@ export default class NodeFire<
 
   /**
    * Removes this reference from the Firebase.
+   * @param options Set debugPermissionDenied to false to skip permission diagnostics.
    * @return {Promise} A promise that is resolved when the value has been removed, or rejected with
    *     an error.
    */
-  remove(options?: {timeout?: number}): Promise<any> {
+  remove(options?: WriteOptions): Promise<any> {
     return invoke(
       {ref: this, method: 'remove', args: []}, options,
       (opts: any) => this.$ref.ref.remove()
@@ -464,11 +471,12 @@ export default class NodeFire<
    * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
    * want to generate a new unique key you can call newKey() directly.
    * @param value The value to push.
+   * @param options Set debugPermissionDenied to false to skip permission diagnostics.
    * @return A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
   push(
-    value: PushValue<WriteRoot> | null, options?: { timeout?: number }
+    value: PushValue<WriteRoot> | null, options?: WriteOptions
   ): Promise<NoInfer<PushedNodeFire<this, Root, WriteSpecialRules, WriteRoot>>> {
     if (_.isNil(value)) {
       return Promise.resolve(
@@ -506,15 +514,16 @@ export default class NodeFire<
    *         the transaction is in progress.  Defaults to true.
    *     {number} timeout A number of milliseconds after which to time out the transaction and
    *         reject the promise with 'timeout'.
+   *     {boolean} debugPermissionDenied Set to false to skip permission diagnostics, including
+   *         prefetch failures.  Defaults to true.
    * @return {Promise} A promise that is resolved with the (normalized) committed value if the
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
   transaction<T extends WriteRoot | null | undefined>(
     updateFunction: (value: ReadValue<Root> | null) => T,
-    options?: {
+    options?: WriteOptions & {
       detectStuck?: number,
-      prefetchValue?: boolean,
-      timeout?: number
+      prefetchValue?: boolean
     }
   ): TransactionPromise<ReadValue<Root> | null | undefined> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -542,7 +551,8 @@ export default class NodeFire<
       }
 
       const operationPromise = new Promise<OperationResult>((resolve, reject) => {
-        const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
+        const wrappedRejectNoResult = wrapReject(
+          self, 'transaction', [], reject, options!.debugPermissionDenied);
         let wrappedReject = wrappedRejectNoResult;
         let aborted = false, settled = false;
         const inputValues: any[] = [];
@@ -571,7 +581,8 @@ export default class NodeFire<
             // they are not Firebase errors.
             wrappedReject = reject;
             result = updateFunction(normalizedValue);
-            wrappedReject = wrapReject(self, 'transaction', result, reject);
+            wrappedReject = wrapReject(
+              self, 'transaction', [result], reject, options!.debugPermissionDenied);
             return result;
           } catch (e) {
             // Firebase propagates exceptions thrown by the update function to the top level.  So
@@ -675,7 +686,7 @@ export default class NodeFire<
     callback: (a: Snapshot<Root>, b?: string) => any,
     cancelCallback?: ((a: Error) => any), context?: object
   ): (a: Snapshot<Root>, b?: string) => any {
-    cancelCallback = wrapReject(this, 'on', cancelCallback);
+    cancelCallback = wrapReject(this, 'on', [], cancelCallback);
     this.$ref.on(
       eventType, captureCallback(this, eventType, callback), cancelCallback, context);
     return callback;
@@ -1040,15 +1051,12 @@ function delegateSnapshot(method) {
   };
 }
 
-function wrapReject(nodefire: AnyNodeFire, method, value, reject?) {
-  let hasValue = true;
-  if (!reject) {
-    reject = value;
-    hasValue = false;
-  }
+function wrapReject(
+  nodefire: AnyNodeFire, method, args: any[], reject, debugPermissionDenied = true
+) {
   if (!reject) return reject;
   return function(error) {
-    handleError(error, {ref: nodefire, method, args: hasValue ? [value] : []}, reject);
+    handleError(error, {ref: nodefire, method, args}, reject, debugPermissionDenied);
   };
 }
 
@@ -1108,7 +1116,7 @@ function getNormalRawValue<T>(value: T): ReadValue<T> {
   return value as ReadValue<T>;
 }
 
-function invoke(op, options: {timeout?: number, debugPermissionDenied?: boolean} = {}, fn) {
+function invoke(op, options: WriteOptions = {}, fn) {
   options = options ?? {};
   return runOperationInterceptors('before', op, options).then(() => {
     const startTime = performance.now();
