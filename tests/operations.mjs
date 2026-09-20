@@ -17,7 +17,7 @@ FirefightModule.Simulator = class {
 
   auth() {
     permissionDiagnosticStartTime = performance.now();
-    return {set: () => permissionDiagnostic};
+    return {set: () => permissionDiagnostic, update: () => permissionDiagnostic};
   }
 };
 const {default: NodeFire} = require('../built/index.js');
@@ -82,6 +82,10 @@ class FakeReference {
 
   set(value) {
     return this.operations.set?.(value) ?? Promise.resolve();
+  }
+
+  update(value) {
+    return this.operations.update?.(value) ?? Promise.resolve();
   }
 
   transaction(updateFunction, callback) {
@@ -304,4 +308,45 @@ test('transactions blocked by before interceptors do not invoke after intercepto
   );
   assert.strictEqual(operationCalled, false);
   assert.strictEqual(afterCalled, false);
+});
+
+test('expected update rejections bypass a pending permission diagnostic', async t => {
+  t.after(resetInterceptors);
+  let resolveDiagnostic;
+  permissionDiagnostic = new Promise(resolve => {resolveDiagnostic = resolve;});
+  t.after(() => {permissionDiagnostic = Promise.resolve('permission trace');});
+  const database = {
+    app: {
+      name: `operations-test-${++appCounter}`,
+      options: {databaseAuthVariableOverride: {uid: 'test'}}
+    },
+    ref: _.constant({toString: _.constant('https://operations-test.firebaseio.com/')})
+  };
+  const ref = new NodeFire(new FakeReference('/writes', {
+    update: () => Promise.reject(_.assign(new Error('permission_denied'), {
+      code: 'PERMISSION_DENIED'
+    }))
+  }, database));
+  ref.enablePermissionDebugging('secret');
+  t.after(() => ref.enablePermissionDebugging(null));
+  const observed = [];
+  afterInterceptor = op => {observed.push(op);};
+
+  let diagnosticError, expectedError;
+  const ordinary = ref.update({value: 1}).catch(error => {diagnosticError = error;});
+  const expected = ref.update({value: 2}, {debugPermissionDenied: false})
+    .catch(error => {expectedError = error;});
+  await new Promise(resolve => setImmediate(resolve));
+  try {
+    assert.strictEqual(diagnosticError, undefined);
+    assert.strictEqual(expectedError?.code, 'PERMISSION_DENIED');
+    assert.strictEqual(expectedError.firebase.method, 'update');
+    assert.strictEqual(expectedError.firebase.permissionTrace, undefined);
+    assert.strictEqual(observed.length, 1);
+    assert.strictEqual(observed[0].error, expectedError);
+  } finally {
+    resolveDiagnostic('permission trace');
+    await Promise.all([ordinary, expected]);
+  }
+  assert.strictEqual(diagnosticError.firebase.permissionTrace, 'permission trace');
 });

@@ -28,6 +28,7 @@ interface Database {
 
 declare const reference: Reference;
 const untyped = new NodeFire(reference);
+void untyped.update({value: 1}, {timeout: 1000, debugPermissionDenied: false});
 const unusedCacheStats: CacheStats = NodeFire.getCacheStats();
 const unusedCacheCount: number = unusedCacheStats.count;
 const unusedCacheMaxSize: number = unusedCacheStats.maxSize;

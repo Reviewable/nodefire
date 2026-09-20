@@ -433,11 +433,14 @@ export default class NodeFire<
    * Updates a value at this reference, setting only the top-level keys supplied and leaving any
    * other ones as-is.
    * @param  {Object} value The value to update the reference with.
-   * @param {{timeout?: number?}=} options
+   * @param options Set debugPermissionDenied to false when permission rejection is expected and
+   *     should not wait for a diagnostic simulation enabled by enablePermissionDebugging().
    * @return {Promise<void>} A promise that is resolved when the value has been updated,
    * or rejected with an error.
    */
-  update(value: UpdateShape<WriteRoot>, options?: {timeout?: number}): Promise<void> {
+  update(
+    value: UpdateShape<WriteRoot>, options?: {timeout?: number, debugPermissionDenied?: boolean}
+  ): Promise<void> {
     if (_.isPlainObject(value) && _.isEmpty(value)) return Promise.resolve();
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
@@ -1105,7 +1108,7 @@ function getNormalRawValue<T>(value: T): ReadValue<T> {
   return value as ReadValue<T>;
 }
 
-function invoke(op, options: {timeout?: number} = {}, fn) {
+function invoke(op, options: {timeout?: number, debugPermissionDenied?: boolean} = {}, fn) {
   options = options ?? {};
   return runOperationInterceptors('before', op, options).then(() => {
     const startTime = performance.now();
@@ -1134,7 +1137,7 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
         settled = true;
         if (timeout) timeout.clear();
         if (e.message === 'timeout') e.timeout = options.timeout;
-        return handleError(e, op, Promise.reject.bind(Promise));
+        return handleError(e, op, Promise.reject.bind(Promise), options.debugPermissionDenied);
       }
     );
     return promise.then(
@@ -1195,7 +1198,7 @@ function attachInterceptorError(error: NodeFireError, interceptorError: unknown)
   else error.interceptorError = interceptorError;
 }
 
-function handleError(error, op, callback) {
+function handleError(error, op, callback, debugPermissionDenied = true) {
   const args: any[] = _.map(
     op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
   const auth = ((op.ref as Reference).database.app.options as any).databaseAuthVariableOverride;
@@ -1215,7 +1218,9 @@ function handleError(error, op, callback) {
   if (!error.code) error.code = error.message;
   error.message = 'Firebase: ' + error.message;
   const simulator = simulators[op.ref.database.app.name];
-  if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
+  if (!debugPermissionDenied || !simulator || !simulator.isPermissionDenied(error)) {
+    return callback(error);
+  }
   const method = op.method === 'get' ? 'once' : op.method;
   return simulator.auth(auth)[method](op.ref, op.args[0]).then(explanation => {
     error.firebase.permissionTrace = explanation;

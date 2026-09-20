@@ -76,6 +76,17 @@ Typed navigation retains the database schema: `child()` specializes the value an
 `parent` restores the immediate parent types, and `root` restores the database-root types.  A
 widened runtime child path has an `unknown` value and parent type, while its `root` remains typed.
 
+## Expected permission rejections
+
+When permission debugging is enabled, rejected operations normally wait for a serialized
+Firefight simulation before returning the error. For an `update` whose permission rejection is
+an expected concurrency check, pass `{debugPermissionDenied: false}` to return the original
+Firebase error without running that diagnostic simulation. Firebase security rules, error
+metadata, operation interceptors, and diagnostics for other operations are unchanged.
+
+```js
+await ref.update(value, {timeout: 10000, debugPermissionDenied: false});
+```
 ## API
 
 This is reproduced from the source code, which is authoritative.
