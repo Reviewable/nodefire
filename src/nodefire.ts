@@ -357,7 +357,12 @@ export default class NodeFire<
   /**
    * Gets this reference's current value from Firebase, and inserts it into the cache if a
    * maxCacheSize was set and the `cache` option is not false.
-   * @param options Set debugPermissionDenied to false to skip permission diagnostics.
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
+   * @param {boolean} [options.cache=true] Keep the value pinned and updated in the cache if
+   *     caching is enabled. Set to false to skip adding this reference to the cache.
    * @return A promise that is resolved to the reference's value, or rejected with an
    *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
@@ -419,7 +424,12 @@ export default class NodeFire<
   /**
    * Sets the value at this reference.
    * @param value The value to set.
-   * @param options Set debugPermissionDenied to false to skip permission diagnostics.
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
+   * @param {boolean} [options.unchecked=false] Skip TypeScript write-shape checking for this
+   *     value. Firebase validation still applies.
    * @returns {Promise<void>} A promise that is resolved when the value has been set,
    * or rejected with an error.
    */
@@ -439,8 +449,10 @@ export default class NodeFire<
    * Updates a value at this reference, setting only the top-level keys supplied and leaving any
    * other ones as-is.
    * @param  {Object} value The value to update the reference with.
-   * @param options Set debugPermissionDenied to false when permission rejection is expected and
-   *     should not wait for a diagnostic simulation enabled by enablePermissionDebugging().
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
    * @return {Promise<void>} A promise that is resolved when the value has been updated,
    * or rejected with an error.
    */
@@ -456,7 +468,10 @@ export default class NodeFire<
 
   /**
    * Removes this reference from the Firebase.
-   * @param options Set debugPermissionDenied to false to skip permission diagnostics.
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
    * @return {Promise} A promise that is resolved when the value has been removed, or rejected with
    *     an error.
    */
@@ -471,7 +486,10 @@ export default class NodeFire<
    * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
    * want to generate a new unique key you can call newKey() directly.
    * @param value The value to push.
-   * @param options Set debugPermissionDenied to false to skip permission diagnostics.
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
    * @return A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
@@ -506,16 +524,15 @@ export default class NodeFire<
    *     reference and returns the new value to replace it with.  Return undefined to abort the
    *     transaction, and null to remove the reference.  Be prepared for this function to be called
    *     multiple times in case of contention.
-   * @param  options An
-   * options objects that may include the following properties:
-   *     {number} detectStuck Throw a 'stuck' exception after the update function's input value has
-   *         remained unchanged this many times.  Defaults to 0 (turned off).
-   *     {boolean} prefetchValue Fetch and keep pinned the value referenced by the transaction while
-   *         the transaction is in progress.  Defaults to true.
-   *     {number} timeout A number of milliseconds after which to time out the transaction and
-   *         reject the promise with 'timeout'.
-   *     {boolean} debugPermissionDenied Set to false to skip permission diagnostics, including
-   *         prefetch failures.  Defaults to true.
+   * @param {Object} [options] Optional transaction settings.
+   * @param {number} [options.timeout] Transaction timeout in milliseconds, including prefetch.
+   *     Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics
+   *     enabled by enablePermissionDebugging(), including for prefetch failures.
+   * @param {number} [options.detectStuck=0] Throw a 'stuck' error after the update function's
+   *     input value remains unchanged this many times. Zero disables this check.
+   * @param {boolean} [options.prefetchValue=true] Fetch and keep pinned the value referenced
+   *     by the transaction while the transaction is in progress.
    * @return {Promise} A promise that is resolved with the (normalized) committed value if the
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
@@ -680,8 +697,9 @@ export default class NodeFire<
    * @param callback
    * @param cancelCallback
    * @param context
-   * @param options Set debugPermissionDenied to false to skip permission diagnostics when the
-   *     listener is cancelled.
+   * @param {Object} [options] Optional listener settings, passed after context.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics
+   *     enabled by enablePermissionDebugging() when the listener is cancelled.
    */
   on(
     eventType: EventType,
@@ -726,12 +744,11 @@ export default class NodeFire<
    * Fetches the keys of the current reference's children without also fetching all the contents,
    * using the Firebase REST API.
    *
-   * @param options An options
-   * object with the following items, all optional:
-   *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient
-   *        errors (defaults to 1)
-   *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
-   *   - timeout: the maximum number of milliseconds for all fetch attempts and retry delays
+   * @param {Object} options Fetch settings; all properties are optional.
+   * @param {number} [options.maxTries=1] Maximum number of fetch attempts for transient errors.
+   * @param {number} [options.retryInterval=1000] Delay between retries in milliseconds.
+   * @param {number} [options.timeout] Maximum milliseconds for all fetch attempts and retry
+   *     delays. Disabled by default.
    * @return {Promise<string[]>} A promise that resolves to an array of key strings.
    */
   childrenKeys(

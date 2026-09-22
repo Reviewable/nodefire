@@ -276,6 +276,12 @@ childRaw(path)
 /**
  * Gets this reference's current value from Firebase, and inserts it into the cache if a
  * maxCacheSize was set and the `cache` option is not false.
+ * @param {Object} [options] Optional operation settings.
+ * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+ * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+ *     by enablePermissionDebugging().
+ * @param {boolean} [options.cache=true] Keep the value pinned and updated in the cache if
+ *     caching is enabled. Set to false to skip adding this reference to the cache.
  * @return {Promise} A promise that is resolved to the reference's value, or rejected with an error.
  *     The value returned is normalized: arrays are converted to objects, and the value's priority
  *     (if any) is set on a ".priority" attribute if the value is an object.
@@ -297,6 +303,12 @@ uncache()
  * Sets the value at this reference.  To set the priority, include a ".priority" attribute on the
  * value.
  * @param {Object || number || string || boolean} value The value to set.
+ * @param {Object} [options] Optional operation settings.
+ * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+ * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+ *     by enablePermissionDebugging().
+ * @param {boolean} [options.unchecked=false] Skip TypeScript write-shape checking for this
+ *     value. Firebase validation still applies.
  * @returns {Promise} A promise that is resolved when the value has been set, or rejected with an
  *     error.
  */
@@ -306,6 +318,10 @@ set(value, options)
  * Updates a value at this reference, setting only the top-level keys supplied and leaving any other
  * ones as-is.
  * @param  {Object} value The value to update the reference with.
+ * @param {Object} [options] Optional operation settings.
+ * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+ * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+ *     by enablePermissionDebugging().
  * @return {Promise} A promise that is resolved when the value has been updated, or rejected with an
  *     error.
  */
@@ -313,6 +329,10 @@ update(value, options)
 
 /**
  * Removes this reference from the Firebase.
+ * @param {Object} [options] Optional operation settings.
+ * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+ * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+ *     by enablePermissionDebugging().
  * @return {Promise} A promise that is resolved when the value has been removed, or rejected with an
  *     error.
  */
@@ -322,6 +342,10 @@ remove(options)
  * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
  * want to generate a new unique key you can call newKey() directly.
  * @param  {Object || number || string || boolean} value The value to push.
+ * @param {Object} [options] Optional operation settings.
+ * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+ * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+ *     by enablePermissionDebugging().
  * @return {Promise} A promise that is resolved to a new NodeFire object that refers to the newly
  *     pushed value (with the same scope as this object), or rejected with an error.
  */
@@ -340,15 +364,15 @@ push(value, options)
  *     reference and returns the new value to replace it with.  Return undefined to abort the
  *     transaction, and null to remove the reference.  Be prepared for this function to be called
  *     multiple times in case of contention.
- * @param  {Object} options An options objects that may include the following properties:
- *     {number} detectStuck Throw a 'stuck' exception after the update function's input value has
- *         remained unchanged this many times.  Defaults to 0 (turned off).
- *     {boolean} prefetchValue Fetch and keep pinned the value referenced by the transaction while
- *         the transaction is in progress.  Defaults to true.
- *     {number} timeout A number of milliseconds after which to time out the transaction and
- *         reject the promise with 'timeout'.
- *     {boolean} debugPermissionDenied Set to false to skip permission diagnostics, including
- *         prefetch failures. Defaults to true.
+ * @param {Object} [options] Optional transaction settings.
+ * @param {number} [options.timeout] Transaction timeout in milliseconds, including prefetch.
+ *     Disabled by default.
+ * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics
+ *     enabled by enablePermissionDebugging(), including for prefetch failures.
+ * @param {number} [options.detectStuck=0] Throw a 'stuck' error after the update function's
+ *     input value remains unchanged this many times. Zero disables this check.
+ * @param {boolean} [options.prefetchValue=true] Fetch and keep pinned the value referenced
+ *     by the transaction while the transaction is in progress.
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
  *     transaction committed or with undefined if it aborted, or rejected with an error.
  */
@@ -358,10 +382,11 @@ transaction(updateFunction, options)
  * Fetches the keys of the current reference's children without also fetching all the contents,
  * using the Firebase REST API.
  *
- * @param options An options object with the following items, all optional:
- *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient errors
- *               (defaults to 1)
- *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
+ * @param {Object} options Fetch settings; all properties are optional.
+ * @param {number} [options.maxTries=1] Maximum number of fetch attempts for transient errors.
+ * @param {number} [options.retryInterval=1000] Delay between retries in milliseconds.
+ * @param {number} [options.timeout] Maximum milliseconds for all fetch attempts and retry
+ *     delays. Disabled by default.
  * @return A promise that resolves to an array of key strings.
  */
 childrenKeys(options)
@@ -387,13 +412,17 @@ isEqual()
 toJSON()
 toString()
 
-/* Listener registration methods.  They work the same as on Firebase objects, except that the
-   snapshot passed into the callback (and forEach) is wrapped such that:
-     1) The val() method will return a normalized method (like NodeFire.get() does).
-     2) The ref() method will return a NodeFire reference, with the same scope as the reference
-        on which on() was called.
-     3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
-*/
+/**
+ * Registers a listener. Works the same as on Firebase objects, except that the snapshot passed
+ * into the callback (and forEach) is wrapped such that:
+ *   1) The val() method will return a normalized method (like NodeFire.get() does).
+ *   2) The ref() method will return a NodeFire reference, with the same scope as the reference
+ *      on which on() was called.
+ *   3) The child() method takes an optional extra scope parameter, just like NodeFire.child().
+ * @param {Object} [options] Optional listener settings, passed after context.
+ * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics
+ *     enabled by enablePermissionDebugging() when the listener is cancelled.
+ */
 on(eventType, callback, cancelCallback, context, options)
 off(eventType, callback, context)
 
