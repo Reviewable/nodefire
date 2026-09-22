@@ -91,6 +91,12 @@ export interface TransactionMetadata {
   duration?: number;
 }
 
+export interface OperationOptions {
+  timeout?: number;
+  /** Set to false to skip permission diagnostics for expected rejections. Defaults to true. */
+  debugPermissionDenied?: boolean;
+}
+
 export interface TransactionPromise<T> extends Promise<T> {
   transaction: TransactionMetadata;
 }
@@ -351,11 +357,16 @@ export default class NodeFire<
   /**
    * Gets this reference's current value from Firebase, and inserts it into the cache if a
    * maxCacheSize was set and the `cache` option is not false.
-   * @param options
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
+   * @param {boolean} [options.cache=true] Keep the value pinned and updated in the cache if
+   *     caching is enabled. Set to false to skip adding this reference to the cache.
    * @return A promise that is resolved to the reference's value, or rejected with an
    *     error.  The value returned is normalized, meaning arrays are converted to objects.
    */
-  get(options?: {timeout?: number, cache?: boolean}): Promise<ReadValue<Root> | null> {
+  get(options?: OperationOptions & {cache?: boolean}): Promise<ReadValue<Root> | null> {
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       (opts: {cache?: boolean}) => {
@@ -413,15 +424,20 @@ export default class NodeFire<
   /**
    * Sets the value at this reference.
    * @param value The value to set.
-   * @param options
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
+   * @param {boolean} [options.unchecked=false] Skip TypeScript write-shape checking for this
+   *     value. Firebase validation still applies.
    * @returns {Promise<void>} A promise that is resolved when the value has been set,
    * or rejected with an error.
    */
-  set(value: WriteRoot | null, options?: {timeout?: number}): Promise<void>;
-  set(value: unknown, options: {timeout?: number, unchecked: true}): Promise<void>;
+  set(value: WriteRoot | null, options?: OperationOptions): Promise<void>;
+  set(value: unknown, options: OperationOptions & {unchecked: true}): Promise<void>;
   set(
     value: unknown,
-    options: {timeout?: number, unchecked?: boolean} = {}
+    options: OperationOptions & {unchecked?: boolean} = {}
   ): Promise<void> {
     return invoke(
       {ref: this, method: 'set', args: [value]}, options,
@@ -433,11 +449,16 @@ export default class NodeFire<
    * Updates a value at this reference, setting only the top-level keys supplied and leaving any
    * other ones as-is.
    * @param  {Object} value The value to update the reference with.
-   * @param {{timeout?: number?}=} options
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
    * @return {Promise<void>} A promise that is resolved when the value has been updated,
    * or rejected with an error.
    */
-  update(value: UpdateShape<WriteRoot>, options?: {timeout?: number}): Promise<void> {
+  update(
+    value: UpdateShape<WriteRoot>, options?: OperationOptions
+  ): Promise<void> {
     if (_.isPlainObject(value) && _.isEmpty(value)) return Promise.resolve();
     return invoke(
       {ref: this, method: 'update', args: [value]}, options,
@@ -447,10 +468,14 @@ export default class NodeFire<
 
   /**
    * Removes this reference from the Firebase.
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
    * @return {Promise} A promise that is resolved when the value has been removed, or rejected with
    *     an error.
    */
-  remove(options?: {timeout?: number}): Promise<any> {
+  remove(options?: OperationOptions): Promise<any> {
     return invoke(
       {ref: this, method: 'remove', args: []}, options,
       (opts: any) => this.$ref.ref.remove()
@@ -461,11 +486,15 @@ export default class NodeFire<
    * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
    * want to generate a new unique key you can call newKey() directly.
    * @param value The value to push.
+   * @param {Object} [options] Optional operation settings.
+   * @param {number} [options.timeout] Operation timeout in milliseconds. Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics enabled
+   *     by enablePermissionDebugging().
    * @return A promise that is resolved to a new NodeFire object that refers to the newly
    *     pushed value (with the same scope as this object), or rejected with an error.
    */
   push(
-    value: PushValue<WriteRoot> | null, options?: { timeout?: number }
+    value: PushValue<WriteRoot> | null, options?: OperationOptions
   ): Promise<NoInfer<PushedNodeFire<this, Root, WriteSpecialRules, WriteRoot>>> {
     if (_.isNil(value)) {
       return Promise.resolve(
@@ -495,23 +524,23 @@ export default class NodeFire<
    *     reference and returns the new value to replace it with.  Return undefined to abort the
    *     transaction, and null to remove the reference.  Be prepared for this function to be called
    *     multiple times in case of contention.
-   * @param  options An
-   * options objects that may include the following properties:
-   *     {number} detectStuck Throw a 'stuck' exception after the update function's input value has
-   *         remained unchanged this many times.  Defaults to 0 (turned off).
-   *     {boolean} prefetchValue Fetch and keep pinned the value referenced by the transaction while
-   *         the transaction is in progress.  Defaults to true.
-   *     {number} timeout A number of milliseconds after which to time out the transaction and
-   *         reject the promise with 'timeout'.
+   * @param {Object} [options] Optional transaction settings.
+   * @param {number} [options.timeout] Transaction timeout in milliseconds, including prefetch.
+   *     Disabled by default.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics
+   *     enabled by enablePermissionDebugging(), including for prefetch failures.
+   * @param {number} [options.detectStuck=0] Throw a 'stuck' error after the update function's
+   *     input value remains unchanged this many times. Zero disables this check.
+   * @param {boolean} [options.prefetchValue=true] Fetch and keep pinned the value referenced
+   *     by the transaction while the transaction is in progress.
    * @return {Promise} A promise that is resolved with the (normalized) committed value if the
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
   transaction<T extends WriteRoot | null | undefined>(
     updateFunction: (value: ReadValue<Root> | null) => T,
-    options?: {
+    options?: OperationOptions & {
       detectStuck?: number,
-      prefetchValue?: boolean,
-      timeout?: number
+      prefetchValue?: boolean
     }
   ): TransactionPromise<ReadValue<Root> | null | undefined> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -539,7 +568,8 @@ export default class NodeFire<
       }
 
       const operationPromise = new Promise<OperationResult>((resolve, reject) => {
-        const wrappedRejectNoResult = wrapReject(self, 'transaction', reject);
+        const wrappedRejectNoResult = wrapReject(
+          self, 'transaction', [], reject, options!.debugPermissionDenied);
         let wrappedReject = wrappedRejectNoResult;
         let aborted = false, settled = false;
         const inputValues: any[] = [];
@@ -568,7 +598,8 @@ export default class NodeFire<
             // they are not Firebase errors.
             wrappedReject = reject;
             result = updateFunction(normalizedValue);
-            wrappedReject = wrapReject(self, 'transaction', result, reject);
+            wrappedReject = wrapReject(
+              self, 'transaction', [result], reject, options!.debugPermissionDenied);
             return result;
           } catch (e) {
             // Firebase propagates exceptions thrown by the update function to the top level.  So
@@ -666,13 +697,17 @@ export default class NodeFire<
    * @param callback
    * @param cancelCallback
    * @param context
+   * @param {Object} [options] Optional listener settings, passed after context.
+   * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics
+   *     enabled by enablePermissionDebugging() when the listener is cancelled.
    */
   on(
     eventType: EventType,
     callback: (a: Snapshot<Root>, b?: string) => any,
-    cancelCallback?: ((a: Error) => any), context?: object
+    cancelCallback?: ((a: Error) => any), context?: object,
+    options: Pick<OperationOptions, 'debugPermissionDenied'> = {}
   ): (a: Snapshot<Root>, b?: string) => any {
-    cancelCallback = wrapReject(this, 'on', cancelCallback);
+    cancelCallback = wrapReject(this, 'on', [], cancelCallback, options.debugPermissionDenied);
     this.$ref.on(
       eventType, captureCallback(this, eventType, callback), cancelCallback, context);
     return callback;
@@ -709,12 +744,11 @@ export default class NodeFire<
    * Fetches the keys of the current reference's children without also fetching all the contents,
    * using the Firebase REST API.
    *
-   * @param options An options
-   * object with the following items, all optional:
-   *   - maxTries: the maximum number of times to try to fetch the keys, in case of transient
-   *        errors (defaults to 1)
-   *   - retryInterval: the number of milliseconds to delay between retries (defaults to 1000)
-   *   - timeout: the maximum number of milliseconds for all fetch attempts and retry delays
+   * @param {Object} options Fetch settings; all properties are optional.
+   * @param {number} [options.maxTries=1] Maximum number of fetch attempts for transient errors.
+   * @param {number} [options.retryInterval=1000] Delay between retries in milliseconds.
+   * @param {number} [options.timeout] Maximum milliseconds for all fetch attempts and retry
+   *     delays. Disabled by default.
    * @return {Promise<string[]>} A promise that resolves to an array of key strings.
    */
   childrenKeys(
@@ -1037,15 +1071,12 @@ function delegateSnapshot(method) {
   };
 }
 
-function wrapReject(nodefire: AnyNodeFire, method, value, reject?) {
-  let hasValue = true;
-  if (!reject) {
-    reject = value;
-    hasValue = false;
-  }
+function wrapReject(
+  nodefire: AnyNodeFire, method, args: any[], reject, debugPermissionDenied = true
+) {
   if (!reject) return reject;
   return function(error) {
-    handleError(error, {ref: nodefire, method, args: hasValue ? [value] : []}, reject);
+    handleError(error, {ref: nodefire, method, args}, reject, debugPermissionDenied);
   };
 }
 
@@ -1105,7 +1136,7 @@ function getNormalRawValue<T>(value: T): ReadValue<T> {
   return value as ReadValue<T>;
 }
 
-function invoke(op, options: {timeout?: number} = {}, fn) {
+function invoke(op, options: OperationOptions = {}, fn) {
   options = options ?? {};
   return runOperationInterceptors('before', op, options).then(() => {
     const startTime = performance.now();
@@ -1134,7 +1165,7 @@ function invoke(op, options: {timeout?: number} = {}, fn) {
         settled = true;
         if (timeout) timeout.clear();
         if (e.message === 'timeout') e.timeout = options.timeout;
-        return handleError(e, op, Promise.reject.bind(Promise));
+        return handleError(e, op, Promise.reject.bind(Promise), options.debugPermissionDenied);
       }
     );
     return promise.then(
@@ -1195,7 +1226,7 @@ function attachInterceptorError(error: NodeFireError, interceptorError: unknown)
   else error.interceptorError = interceptorError;
 }
 
-function handleError(error, op, callback) {
+function handleError(error, op, callback, debugPermissionDenied = true) {
   const args: any[] = _.map(
     op.args, arg => _.isFunction(arg) ? `<function${arg.name ? ' ' + arg.name : ''}>` : arg);
   const auth = ((op.ref as Reference).database.app.options as any).databaseAuthVariableOverride;
@@ -1215,7 +1246,9 @@ function handleError(error, op, callback) {
   if (!error.code) error.code = error.message;
   error.message = 'Firebase: ' + error.message;
   const simulator = simulators[op.ref.database.app.name];
-  if (!simulator || !simulator.isPermissionDenied(error)) return callback(error);
+  if (!debugPermissionDenied || !simulator || !simulator.isPermissionDenied(error)) {
+    return callback(error);
+  }
   const method = op.method === 'get' ? 'once' : op.method;
   return simulator.auth(auth)[method](op.ref, op.args[0]).then(explanation => {
     error.firebase.permissionTrace = explanation;
