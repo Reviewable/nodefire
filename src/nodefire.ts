@@ -776,18 +776,19 @@ export default class NodeFire<
    *     simulating request with debug feedback.  Pass a falsy value to turn off debugging.
    */
   enablePermissionDebugging(legacySecret: string | null): void {
+    const databaseKey = getCacheKeyPrefix(this);
     if (legacySecret) {
-      if (!simulators[this.database.app.name]) {
+      if (!simulators[databaseKey]) {
         const authOverride = (this.database.app.options as any).databaseAuthVariableOverride;
         if (!authOverride || !(authOverride as any).uid) {
           throw new Error(
             'You must initialize your database with a databaseAuthVariableOverride that includes ' +
             'a uid');
         }
-        simulators[this.database.app.name] = new Simulator(this.database, legacySecret);
+        simulators[databaseKey] = new Simulator(this.database, legacySecret);
       }
     } else {
-      delete simulators[this.database.app.name];
+      delete simulators[databaseKey];
     }
   }
 
@@ -1245,7 +1246,7 @@ function handleError(error, op, callback, debugPermissionDenied = true) {
   }
   if (!error.code) error.code = error.message;
   error.message = 'Firebase: ' + error.message;
-  const simulator = simulators[op.ref.database.app.name];
+  const simulator = simulators[getCacheKeyPrefix(op.ref)];
   if (!debugPermissionDenied || !simulator || !simulator.isPermissionDenied(error)) {
     return callback(error);
   }
