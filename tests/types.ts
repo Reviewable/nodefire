@@ -35,7 +35,7 @@ void untyped.update({value: 1}, {timeout: 1000, debugPermissionDenied: false});
 void untyped.remove({timeout: 1000, debugPermissionDenied: false});
 void untyped.push({value: 1}, {timeout: 1000, debugPermissionDenied: false});
 void untyped.transaction(value => value, {
-  timeout: 1000, debugPermissionDenied: false, prefetchValue: false
+  timeout: 1000, debugPermissionDenied: false, prefetchValue: false, detectStuck: 5
 });
 const unusedCacheStats: CacheStats = NodeFire.getCacheStats();
 const unusedCacheCount: number = unusedCacheStats.count;
