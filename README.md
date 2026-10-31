@@ -355,10 +355,9 @@ push(value, options)
  * Runs a transaction at this reference.  The transaction is not applied locally first, since this
  * would be incompatible with a promise's complete-once semantics.
  *
- * There's a bug in the Firebase SDK that fails to update the local value and will cause a
- * transaction to fail repeatedly until it fails with maxretry.  If you specify the detectStuck
- * option then an error with the message 'stuck' will be thrown earlier so that you can try to work
- * around the issue.
+ * Firebase may call the update function repeatedly with unchanged input while recomputing
+ * queued transactions. Callback invocations are not limited; Firebase controls its own server
+ * retry limit. Use timeout to bound the whole operation, including automatic restarts.
  *
  * @param  {function(value):value} updateFunction A function that takes the current value at this
  *     reference and returns the new value to replace it with.  Return undefined to abort the
@@ -369,8 +368,7 @@ push(value, options)
  *     Disabled by default.
  * @param {boolean} [options.debugPermissionDenied=true] Set to false to skip diagnostics
  *     enabled by enablePermissionDebugging(), including for prefetch failures.
- * @param {number} [options.detectStuck=0] Throw a 'stuck' error after the update function's
- *     input value remains unchanged this many times. Zero disables this check.
+ * @param {number} [options.detectStuck] Deprecated and ignored.
  * @param {boolean} [options.prefetchValue=true] Fetch and keep pinned the value referenced
  *     by the transaction while the transaction is in progress.
  * @return {Promise} A promise that is resolved with the (normalized) committed value if the
