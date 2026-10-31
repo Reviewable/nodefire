@@ -10,12 +10,16 @@ const require = createRequire(import.meta.url);
 const FirefightModule = require('firefight');
 let permissionDiagnostic = Promise.resolve('permission trace');
 let permissionDiagnosticStartTime;
+const simulatedDatabases = [];
 FirefightModule.Simulator = class {
+  constructor(database) {this.database = database;}
+
   isPermissionDenied(error) {
     return error.code === 'PERMISSION_DENIED';
   }
 
   auth() {
+    simulatedDatabases.push(this.database);
     permissionDiagnosticStartTime = performance.now();
     return Object.fromEntries(_.map(
       ['once', 'on', 'set', 'update', 'remove', 'push', 'transaction'],
@@ -70,7 +74,7 @@ class FakeReference {
 
   on(event, callback, cancelCallback, context) {
     if (_.endsWith(this.path, '/.info/serverTimeOffset')) {
-      callback({val: _.constant(0)});
+      callback({val: _.constant(this.operations.timeOffset ?? 0)});
       return;
     }
     if (_.endsWith(this.path, '/.info/connected')) {
@@ -107,9 +111,43 @@ class FakeReference {
   }
 
   toString() {
-    return `https://operations.test${this.path}`;
+    return `${this.database.url ?? 'https://operations.test'}${this.path}`;
   }
 }
+
+test('databases on one app have independent permission simulators and a shared clock', async t => {
+  const app = {
+    name: `operations-test-${++appCounter}`,
+    options: {databaseAuthVariableOverride: {uid: 'server'}}
+  };
+  const makeDatabase = (url, timeOffset) => {
+    const database = {app, url};
+    const ref = new NodeFire(new FakeReference('/writes', {
+      timeOffset,
+      set: () => Promise.reject(_.assign(new Error('denied'), {code: 'PERMISSION_DENIED'}))
+    }, database));
+    t.after(() => ref.enablePermissionDebugging(null));
+    return ref;
+  };
+  const primary = makeDatabase('https://primary.test', 12345);
+  const shard = makeDatabase('https://shard.test', 98765);
+  assert.ok(Math.abs(shard.now - primary.now) < 10);
+  assert.ok(Math.abs(shard.now - Date.now() - 12345) < 10);
+  primary.enablePermissionDebugging('primary-secret');
+  simulatedDatabases.length = 0;
+  await assert.rejects(shard.set(1), error => !error.firebase.permissionTrace);
+  assert.deepEqual(simulatedDatabases, []);
+  shard.enablePermissionDebugging('shard-secret');
+  await assert.rejects(primary.set(1));
+  await assert.rejects(shard.set(1));
+  assert.deepEqual(simulatedDatabases, [primary.database, shard.database]);
+  primary.enablePermissionDebugging(null);
+  simulatedDatabases.length = 0;
+  await assert.rejects(primary.set(1), error => !error.firebase.permissionTrace);
+  await assert.rejects(shard.set(1), error =>
+    error.firebase.permissionTrace === 'permission trace');
+  assert.deepEqual(simulatedDatabases, [shard.database]);
+});
 
 test('before and after interceptors share the descriptor and wait for promises', async t => {
   t.after(resetInterceptors);
