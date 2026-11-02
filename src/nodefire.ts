@@ -77,7 +77,6 @@ export interface Scope {
 
 export interface NodeFireError extends Error {
   cause?: unknown;
-  inputValues?: any;
   interceptorError?: unknown;
   timeout?: number;
 }
@@ -1223,10 +1222,6 @@ function handleError(error, op, callback, debugPermissionDenied = true) {
   if (error.message === 'timeout' && error.timeout) {
     error.firebase.timeout = error.timeout;
     delete error.timeout;
-  }
-  if (error.message === 'stuck' && error.inputValues) {
-    error.firebase.inputValues = error.inputValues;
-    delete error.inputValues;
   }
   if (!error.code) error.code = error.message;
   error.message = 'Firebase: ' + error.message;
