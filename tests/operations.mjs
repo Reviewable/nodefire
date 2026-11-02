@@ -8,6 +8,7 @@ import _ from 'lodash';
 
 const require = createRequire(import.meta.url);
 const FirefightModule = require('firefight');
+const safeTimers = require('safe-timers');
 let permissionDiagnostic = Promise.resolve('permission trace');
 let permissionDiagnosticStartTime;
 const simulatedDatabases = [];
@@ -287,6 +288,107 @@ test('transaction duration spans all tries but excludes prefetch', async t => {
   assert.strictEqual(descriptor.transaction.prefetchDuration, undefined);
   assert.strictEqual(descriptor.duration, descriptor.transaction.duration);
   assert.ok(descriptor.duration >= 20);
+});
+
+_.forEach([undefined, 5], detectStuck => {
+  test(`transactions accept 40 equal-input callbacks with detectStuck=${detectStuck}`, async t => {
+    t.after(resetInterceptors);
+    let descriptor;
+    let updates = 0;
+    afterInterceptor = op => {descriptor = op;};
+    const ref = new NodeFire(new FakeReference('/writes', {
+      transaction: (updateFunction, callback) => {
+        // Firebase can recompute queued transactions without sending a server attempt.
+        for (let i = 0; i < 40; i++) {
+          assert.deepEqual(updateFunction({count: 1}), {count: 2});
+        }
+        callback(null, true, {val: _.constant({count: 2})});
+        return Promise.resolve();
+      }
+    }));
+    const operation = ref.transaction(value => {
+      updates++;
+      return {count: value.count + 1};
+    }, {prefetchValue: false, detectStuck});
+
+    assert.deepEqual(await operation, {count: 2});
+    assert.equal(updates, 40);
+    assert.equal(operation.transaction.tries, 40);
+    assert.equal(operation.transaction.outcome, 'commit');
+    assert.strictEqual(descriptor.transaction, operation.transaction);
+    assert.equal(descriptor.error, undefined);
+  });
+});
+
+test('transactions preserve SDK maxretry errors and callback telemetry', async t => {
+  t.after(resetInterceptors);
+  const sdkError = _.assign(new Error('maxretry'), {code: 'MAXRETRY'});
+  let descriptor;
+  afterInterceptor = op => {descriptor = op;};
+  const ref = new NodeFire(new FakeReference('/writes', {
+    transaction: (updateFunction, callback) => {
+      updateFunction({count: 1});
+      updateFunction({count: 1});
+      callback(sdkError, false, null);
+      return Promise.resolve();
+    }
+  }));
+  const operation = ref.transaction(value => ({count: value.count + 1}), {
+    prefetchValue: false
+  });
+
+  await assert.rejects(operation, error => {
+    assert.strictEqual(error, sdkError);
+    assert.equal(error.message, 'Firebase: maxretry');
+    assert.equal(error.firebase.code, 'maxretry');
+    assert.equal(error.firebase.method, 'transaction');
+    return true;
+  });
+  assert.equal(operation.transaction.tries, 2);
+  assert.equal(operation.transaction.outcome, 'error');
+  assert.strictEqual(descriptor.error, sdkError);
+  assert.strictEqual(descriptor.transaction, operation.transaction);
+});
+
+test('set and disconnect restarts share one transaction timeout', async t => {
+  t.after(resetInterceptors);
+  const timeouts = [];
+  t.mock.method(safeTimers, 'setTimeout', (callback, delay) => {
+    timeouts.push({callback, delay});
+    return {clear: _.noop};
+  });
+  let sdkStarts = 0;
+  let updates = 0;
+  let update, complete;
+  const ref = new NodeFire(new FakeReference('/writes', {
+    transaction: (updateFunction, callback) => {
+      sdkStarts++;
+      update = updateFunction;
+      complete = callback;
+      updateFunction(null);
+      return Promise.resolve();
+    }
+  }));
+  const operation = ref.transaction(() => {
+    updates++;
+    return 1;
+  }, {prefetchValue: false, timeout: 20});
+  const rejected = assert.rejects(operation, /Firebase: timeout/);
+  await new Promise(resolve => setImmediate(resolve));
+  complete(new Error('set'), false, null);
+  complete(new Error('disconnect'), false, null);
+  assert.equal(sdkStarts, 3);
+  assert.equal(timeouts.length, 1);
+  assert.equal(timeouts[0].delay, 20);
+
+  timeouts[0].callback();
+  await rejected;
+  assert.equal(operation.transaction.tries, 3);
+  assert.equal(operation.transaction.outcome, 'error');
+  complete(new Error('set'), false, null);
+  assert.equal(sdkStarts, 3);
+  assert.equal(update(null), undefined);
+  assert.equal(updates, 3);
 });
 
 test('transactions cancelled during prefetch omit operation timing', async t => {
