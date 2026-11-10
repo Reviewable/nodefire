@@ -102,9 +102,6 @@ requests as `onDisconnect.set`, `onDisconnect.update`, `onDisconnect.remove`, or
 permission diagnostics. Registration and cancellation errors are returned to the caller without
 Firefight simulation.
 
-To include the disconnect integration test, start a local Realtime Database Emulator and run
-`FIREBASE_DATABASE_EMULATOR_HOST=127.0.0.1:9000 yarn test`, using the emulator's port.
-
 ## Expected permission rejections
 
 When permission debugging is enabled, rejected operations normally wait for a serialized
