@@ -103,6 +103,10 @@ class FakeReference {
     return this.operations.remove?.() ?? Promise.resolve();
   }
 
+  onDisconnect() {
+    return this.operations.onDisconnect();
+  }
+
   push(value) {
     return this.operations.push?.(value);
   }
@@ -115,6 +119,84 @@ class FakeReference {
     return `${this.database.url ?? 'https://operations.test'}${this.path}`;
   }
 }
+
+test('disconnect interceptors time acknowledgment of the registration', async t => {
+  t.after(resetInterceptors);
+  let acknowledge, sent;
+  const acknowledgment = new Promise(resolve => {acknowledge = resolve;});
+  const requestSent = new Promise(resolve => {sent = resolve;});
+  const ref = new NodeFire(new FakeReference('/presence', {
+    remove: () => assert.fail('ordinary remove called'),
+    onDisconnect: () => ({remove() {
+      sent();
+      return acknowledgment;
+    }})
+  }));
+  const before = [], after = [];
+  beforeInterceptor = op => {before.push(op);};
+  afterInterceptor = op => {after.push(op);};
+  const registration = ref.onDisconnect().remove();
+  await requestSent;
+  assert.equal(before.length, 1);
+  assert.equal(before[0].method, 'onDisconnect.remove');
+  assert.deepEqual(after, []);
+  acknowledge();
+  await registration;
+  assert.equal(after.length, 1);
+  assert.equal(after[0], before[0]);
+  assert.equal(after[0].ref, ref);
+  assert.ok(after[0].duration >= 0);
+});
+
+test('disconnect failures preserve SDK errors when permission debugging is enabled', async t => {
+  t.after(resetInterceptors);
+  const denied = _.assign(new Error('permission_denied'), {code: 'PERMISSION_DENIED'});
+  const validationError = new Error('invalid value');
+  const database = {app: {
+    name: `operations-test-${++appCounter}`,
+    options: {databaseAuthVariableOverride: {uid: 'test'}}
+  }};
+  const ref = new NodeFire(new FakeReference('/presence', {
+    onDisconnect: () => ({
+      set: () => {throw validationError;},
+      cancel: () => Promise.reject(denied)
+    })
+  }, database));
+  ref.enablePermissionDebugging('secret');
+  t.after(() => ref.enablePermissionDebugging(null));
+  const handle = ref.onDisconnect();
+  await assert.rejects(handle.set(1), error =>
+    error === validationError && error.firebase.method === 'onDisconnect.set');
+  await assert.rejects(handle.cancel(), error =>
+    error === denied && error.code === 'PERMISSION_DENIED' &&
+    error.firebase.method === 'onDisconnect.cancel' && !error.firebase.permissionTrace);
+});
+
+test('disconnect registration timeout leaves the submitted request in place', async t => {
+  let expire;
+  t.mock.method(safeTimers, 'setTimeout', callback => {
+    expire = callback;
+    return {clear: _.noop};
+  });
+  let acknowledge, sent;
+  const acknowledgment = new Promise(resolve => {acknowledge = resolve;});
+  const requestSent = new Promise(resolve => {sent = resolve;});
+  const ref = new NodeFire(new FakeReference('/presence', {
+    onDisconnect: () => ({
+      remove() {
+        sent();
+        return acknowledgment;
+      },
+      cancel: () => assert.fail('timeout cancelled the submitted request')
+    })
+  }));
+  const rejection = assert.rejects(ref.onDisconnect().remove({timeout: 500}), error =>
+    error.firebase.method === 'onDisconnect.remove' && error.firebase.timeout === 500);
+  await requestSent;
+  expire();
+  await rejection;
+  acknowledge();
+});
 
 test('databases on one app have independent permission simulators and a shared clock', async t => {
   const app = {

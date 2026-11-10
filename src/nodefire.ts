@@ -96,6 +96,25 @@ export interface OperationOptions {
   debugPermissionDenied?: boolean;
 }
 
+export interface OnDisconnectOptions {
+  /** Time limit in milliseconds for acknowledgment. Timing out does not cancel the request. */
+  timeout?: number;
+}
+
+/** Registers or cancels writes for a Firebase connection. Promises acknowledge the request. */
+export interface OnDisconnect<WriteRoot> {
+  /** Replace the value at this location on disconnect. Pass null to delete it. */
+  set(value: WriteRoot | null, options?: OnDisconnectOptions): Promise<void>;
+  /** Skip TypeScript write-shape checking. Firebase validation still applies. */
+  set(value: unknown, options: OnDisconnectOptions & {unchecked: true}): Promise<void>;
+  /** Update only the supplied keys or relative paths on disconnect. */
+  update(value: UpdateShape<WriteRoot>, options?: OnDisconnectOptions): Promise<void>;
+  /** Delete the value at this location on disconnect. */
+  remove(options?: OnDisconnectOptions): Promise<void>;
+  /** Cancel pending disconnect writes at this location and its descendants. */
+  cancel(options?: OnDisconnectOptions): Promise<void>;
+}
+
 export interface TransactionPromise<T> extends Promise<T> {
   transaction: TransactionMetadata;
 }
@@ -279,7 +298,6 @@ export default class NodeFire<
     return _.assign(target, _.mapKeys(source, (value, key) => this.interpolate(key)));
   }
 
-  // TODO: add onDisconnect
   // TODO: add user/password-related methods
 
   /**
@@ -479,6 +497,33 @@ export default class NodeFire<
       {ref: this, method: 'remove', args: []}, options,
       (opts: any) => this.$ref.ref.remove()
     );
+  }
+
+  /**
+   * Returns a handle for scheduling writes when Firebase detects a disconnect. Operations target
+   * the underlying reference, ignoring any query filters, and resolve when Firebase acknowledges
+   * the request. Register again after reconnecting to schedule another disconnect write.
+   */
+  onDisconnect(): OnDisconnect<WriteRoot> {
+    let handle: ReturnType<Reference['onDisconnect']> | undefined;
+    // Acquire the SDK or Firecrypt handle inside invoke so synchronous failures reject the promise.
+    const getHandle = () => handle ??= this.$ref.ref.onDisconnect();
+    return {
+      set: (value: unknown, options?: OnDisconnectOptions) => invoke(
+        {ref: this, method: 'onDisconnect.set', args: [value]}, options,
+        () => getHandle().set(value)
+      ),
+      update: (value, options) => invoke(
+        {ref: this, method: 'onDisconnect.update', args: [value]}, options,
+        () => getHandle().update(value)
+      ),
+      remove: options => invoke(
+        {ref: this, method: 'onDisconnect.remove', args: []}, options, () => getHandle().remove()
+      ),
+      cancel: options => invoke(
+        {ref: this, method: 'onDisconnect.cancel', args: []}, options, () => getHandle().cancel()
+      )
+    };
   }
 
   /**
@@ -1226,7 +1271,9 @@ function handleError(error, op, callback, debugPermissionDenied = true) {
   if (!error.code) error.code = error.message;
   error.message = 'Firebase: ' + error.message;
   const simulator = simulators[getCacheKeyPrefix(op.ref)];
-  if (!debugPermissionDenied || !simulator || !simulator.isPermissionDenied(error)) {
+  // Firefight cannot simulate Firebase's connection-scoped onDisconnect requests.
+  if (!debugPermissionDenied || !simulator || _.startsWith(op.method, 'onDisconnect.') ||
+      !simulator.isPermissionDenied(error)) {
     return callback(error);
   }
   const method = op.method === 'get' ? 'once' : op.method;

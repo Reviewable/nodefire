@@ -1,7 +1,7 @@
 import type {Reference} from 'firebase-admin/database';
 import NodeFire, {
   type CacheStats, type ChildNodeFireOf, type InterceptOperationsCallback,
-  type OperationDescriptor, type OperationInterceptorTrigger
+  type OnDisconnect, type OperationDescriptor, type OperationInterceptorTrigger
 } from '../src';
 
 type Equal<Left, Right> =
@@ -66,6 +66,24 @@ const unusedTypedAsUntyped: NodeFire = db;
 const unusedUntypedAsTyped: NodeFire<Database> = untyped;
 
 const user = db.child('organizations/:organization/users/:user');
+const unusedDisconnect: OnDisconnect<{displayName: string | null; loginCount: number | null}> =
+  user.onDisconnect();
+void unusedDisconnect.set({displayName: 'Ada', loginCount: 1}, {timeout: 1000});
+void unusedDisconnect.set(null);
+void unusedDisconnect.set({extra: true}, {unchecked: true});
+void unusedDisconnect.update({loginCount: null});
+void unusedDisconnect.remove();
+void unusedDisconnect.cancel({timeout: 1000});
+void user.root.onDisconnect().update({'settings/featureEnabled': false});
+// @ts-expect-error Disconnect set requires the same complete write shape as ordinary set.
+void user.onDisconnect().set({loginCount: 1});
+// @ts-expect-error Query filters do not change the underlying write shape.
+void user.orderByKey().onDisconnect().update({loginCount: '1'});
+const dbWithTimestamps = new NodeFire<Database, [
+  ['loginCount', number, {'.sv': string}]
+]>(reference);
+void dbWithTimestamps.child('organizations/:organization/users/:user/loginCount')
+  .onDisconnect().set(NodeFire.SERVER_TIMESTAMP);
 void user.set({unexpectedField: true}, {unchecked: true, debugPermissionDenied: false});
 // @ts-expect-error Permission diagnostics do not bypass schema checking.
 void user.set({unexpectedField: true}, {debugPermissionDenied: false});
