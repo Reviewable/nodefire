@@ -76,6 +76,35 @@ Typed navigation retains the database schema: `child()` specializes the value an
 `parent` restores the immediate parent types, and `root` restores the database-root types.  A
 widened runtime child path has an `unknown` value and parent type, while its `root` remains typed.
 
+## Disconnect writes
+
+`ref.onDisconnect()` returns a handle with `set(value)`, `update(values)`, `remove()`, and
+`cancel()`. `set` and `update` use the same write types as ordinary NodeFire writes; `update` also
+accepts relative paths. Operations target the underlying reference, even when called on a query.
+`cancel()` clears pending disconnect writes at that location and below it.
+
+```ts
+const connection = db.child('connections/:id', {id});
+const cleanup = connection.onDisconnect();
+await cleanup.remove();  // Wait for Firebase to acknowledge the registration.
+await connection.set({online: true});
+```
+
+Await registration before writing presence. When Firebase detects that the connection has closed,
+it checks security rules again before applying the pending writes. Registrations are one-shot;
+register again on each reconnect (for example, when `.info/connected` becomes `true`). See
+[Firebase's presence guide](https://firebase.google.com/docs/database/web/offline-capabilities#section-presence).
+
+The promises acknowledge registration or cancellation. An optional `{timeout}` bounds how long
+NodeFire waits for acknowledgment; it does not withdraw a request. Interceptors observe these
+requests as `onDisconnect.set`, `onDisconnect.update`, `onDisconnect.remove`, or
+`onDisconnect.cancel`. Firebase runs the eventual write without NodeFire interceptors or Firefight
+permission diagnostics. Registration and cancellation errors are returned to the caller without
+Firefight simulation.
+
+To include the disconnect integration test, start a local Realtime Database Emulator and run
+`FIREBASE_DATABASE_EMULATOR_HOST=127.0.0.1:9000 yarn test`, using the emulator's port.
+
 ## Expected permission rejections
 
 When permission debugging is enabled, rejected operations normally wait for a serialized
@@ -337,6 +366,9 @@ update(value, options)
  *     error.
  */
 remove(options)
+
+/** Returns the handle for registering or cancelling writes on disconnect. */
+onDisconnect()
 
 /**
  * Pushes a value as a new child of this reference, with a new unique key.  Note that if you just
