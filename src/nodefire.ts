@@ -70,6 +70,7 @@ const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors: Record<OperationInterceptorTrigger, InterceptOperationsCallback[]> = {
   before: [], after: []
 };
+const SERVER_TIMESTAMP = Object.freeze({'.sv': 'timestamp'});
 
 export interface Scope {
   [key: string]: any;
@@ -184,9 +185,7 @@ export default class NodeFire<
    * @return {Object} A timestamp placeholder value.
    */
   static get SERVER_TIMESTAMP(): {'.sv': string} {
-    return {
-      '.sv': 'timestamp'
-    };
+    return SERVER_TIMESTAMP;
   }
 
   /**
