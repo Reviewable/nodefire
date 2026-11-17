@@ -64,7 +64,7 @@ export interface CacheStats {
   hitRate: number;
 }
 
-let cache: LRUCache<string, AnyNodeFire> | null;
+let cache: LRUCache<string, Reference | Query> | null;
 let cacheHits = 0, cacheMisses = 0;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors: Record<OperationInterceptorTrigger, InterceptOperationsCallback[]> = {
@@ -439,8 +439,10 @@ export default class NodeFire<
       cache.get(key);  // refresh recency without adding another listener
       return;
     }
-    cache.set(key, this);
-    this.$ref.on('value', noopCallback, () => {
+    // Detach from the exact reference that listened without retaining the caller's scope.
+    const ref = this.$ref;
+    cache.set(key, ref);
+    ref.on('value', noopCallback, () => {
       if (cache) cache.delete(key);
     });
   }
@@ -886,8 +888,8 @@ export default class NodeFire<
   static setCacheSize(max: number): void {
     if (cache) cache.clear();
     if (max) {
-      cache = new LRUCache({max, dispose(ref, key) {
-        ref.$ref.off('value', noopCallback);
+      cache = new LRUCache({max, dispose(ref) {
+        ref.off('value', noopCallback);
       }});
     } else {
       cache = null;
