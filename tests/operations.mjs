@@ -424,6 +424,9 @@ test('transactions preserve SDK maxretry errors and callback telemetry', async t
     assert.equal(error.message, 'Firebase: maxretry');
     assert.equal(error.firebase.code, 'maxretry');
     assert.equal(error.firebase.method, 'transaction');
+    assert.equal(error.firebase.ref, ref.toString());
+    assert.strictEqual(error.firebase.$ref, ref);
+    assert.equal(Object.getOwnPropertyDescriptor(error.firebase, '$ref').enumerable, false);
     return true;
   });
   assert.equal(operation.transaction.tries, 2);

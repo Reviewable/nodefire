@@ -80,6 +80,17 @@ export interface NodeFireError extends Error {
   cause?: unknown;
   interceptorError?: unknown;
   timeout?: number;
+  firebase?: {
+    ref: string;
+    /** The original operation reference. Omitted from enumerated diagnostics. */
+    readonly $ref: AnyNodeFire;
+    method: string;
+    args: any[];
+    auth: unknown;
+    code?: string;
+    timeout?: number;
+    permissionTrace?: unknown;
+  };
 }
 
 export interface TransactionMetadata {
@@ -1263,6 +1274,7 @@ function handleError(error, op, callback, debugPermissionDenied = true) {
     ref: op.ref.toString(), method: op.method, args, auth,
     code: _.toLower(error.code || error.message) || undefined
   };
+  Object.defineProperty(error.firebase, '$ref', {value: op.ref});
   if (error.message === 'timeout' && error.timeout) {
     error.firebase.timeout = error.timeout;
     delete error.timeout;
