@@ -100,7 +100,7 @@ export interface TransactionMetadata {
   prefetchDuration?: number;
   /** Firebase transaction duration, excluding prefetch; absent if no transaction was attempted. */
   duration?: number;
-  /** End-to-end elapsed milliseconds, available after a measured transaction settles. */
+  /** End-to-end elapsed milliseconds, available after the transaction settles. */
   totalDuration?: number;
   /** Cumulative measurements of the caller's update function, excluding normalization. */
   callback?: {
@@ -594,8 +594,6 @@ export default class NodeFire<
    * @param {number} [options.detectStuck] Deprecated and ignored.
    * @param {boolean} [options.prefetchValue=true] Fetch and keep pinned the value referenced
    *     by the transaction while the transaction is in progress.
-   * @param {boolean} [options.measureCallback=false] Include callback timings and total duration
-   *     in the transaction metadata.
    * @return {Promise} A promise that is resolved with the (normalized) committed value if the
    *     transaction committed or with undefined if it aborted, or rejected with an error.
    */
@@ -604,8 +602,7 @@ export default class NodeFire<
     options?: OperationOptions & {
       /** @deprecated Ignored; repeated callback inputs do not indicate transaction failure. */
       detectStuck?: number,
-      prefetchValue?: boolean,
-      measureCallback?: boolean
+      prefetchValue?: boolean
     }
   ): TransactionPromise<ReadValue<Root> | null | undefined> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -614,24 +611,8 @@ export default class NodeFire<
     let tries = 0, result: any;
     const startTime = performance.now();
     let transactionStartTime: number | undefined;
-    const metadata: TransactionMetadata = {};
-    const callback: TransactionMetadata['callback'] =
-      options.measureCallback ? {count: 0, duration: 0} : undefined;
-    if (callback) metadata.callback = callback;
-    const update = callback ? (value: ReadValue<Root> | null) => {
-      const start = performance.now();
-      const cpuStart = process.threadCpuUsage?.();
-      callback.count++;
-      try {
-        return updateFunction(value);
-      } finally {
-        callback.duration += performance.now() - start;
-        if (cpuStart) {
-          const {user, system} = process.threadCpuUsage(cpuStart);
-          callback.cpuDuration = (callback.cpuDuration ?? 0) + (user + system) / 1000;
-        }
-      }
-    } : updateFunction;
+    const callback: NonNullable<TransactionMetadata['callback']> = {count: 0, duration: 0};
+    const metadata: TransactionMetadata = {callback};
 
     type OperationResult = ReadValue<Root> | null | undefined;
     const op: OperationDescriptor = {ref: this, method: 'transaction', args: [updateFunction]};
@@ -664,7 +645,18 @@ export default class NodeFire<
             // Don't modify errors originating from the update function itself,
             // they are not Firebase errors.
             wrappedReject = reject;
-            result = update(normalizedValue);
+            const cpuStart = process.threadCpuUsage?.();
+            const callbackStart = performance.now();
+            callback.count++;
+            try {
+              result = updateFunction(normalizedValue);
+            } finally {
+              callback.duration += performance.now() - callbackStart;
+              if (cpuStart) {
+                const {user, system} = process.threadCpuUsage(cpuStart);
+                callback.cpuDuration = (callback.cpuDuration ?? 0) + (user + system) / 1000;
+              }
+            }
             wrappedReject = wrapReject(
               self, 'transaction', [result], reject, options!.debugPermissionDenied);
             return result;
@@ -750,11 +742,10 @@ export default class NodeFire<
           throw error;
         }
       );
-    });
-    const measuredPromise = callback ? promise.finally(() => {
+    }).finally(() => {
       metadata.totalDuration = performance.now() - startTime;
-    }) : promise;
-    return _.assign(measuredPromise, {transaction: metadata});
+    });
+    return _.assign(promise, {transaction: metadata});
   }
 
   /**

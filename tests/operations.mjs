@@ -364,9 +364,7 @@ test('transaction duration spans all tries but excludes prefetch', async t => {
       return Promise.resolve();
     }
   }));
-  const transaction = ref.transaction(_.constant('committed'), {
-    prefetchValue: false, measureCallback: true
-  });
+  const transaction = ref.transaction(_.constant('committed'), {prefetchValue: false});
   const result = await transaction;
   assert.strictEqual(result, 'committed');
   assert.strictEqual(descriptor.transaction.outcome, 'commit');
@@ -407,7 +405,7 @@ _.forEach([undefined, 5], detectStuck => {
     assert.equal(updates, 40);
     assert.equal(operation.transaction.tries, 40);
     assert.equal(operation.transaction.outcome, 'commit');
-    assert.equal(operation.transaction.callback, undefined);
+    assert.equal(operation.transaction.callback.count, 40);
     assert.strictEqual(descriptor.transaction, operation.transaction);
     assert.equal(descriptor.error, undefined);
   });
@@ -427,7 +425,7 @@ test('transactions preserve SDK maxretry errors and callback telemetry', async t
     }
   }));
   const operation = ref.transaction(value => ({count: value.count + 1}), {
-    prefetchValue: false, measureCallback: true
+    prefetchValue: false
   });
 
   await assert.rejects(operation, error => {
