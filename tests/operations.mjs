@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {performance} from 'node:perf_hooks';
+import process from 'node:process';
 import {test} from 'node:test';
 import {setImmediate, setTimeout} from 'node:timers';
 
@@ -363,13 +364,20 @@ test('transaction duration spans all tries but excludes prefetch', async t => {
       return Promise.resolve();
     }
   }));
-  const result = await ref.transaction(_.constant('committed'), {prefetchValue: false});
+  const transaction = ref.transaction(_.constant('committed'), {prefetchValue: false});
+  const result = await transaction;
   assert.strictEqual(result, 'committed');
   assert.strictEqual(descriptor.transaction.outcome, 'commit');
   assert.strictEqual(descriptor.transaction.tries, 2);
   assert.strictEqual(descriptor.transaction.prefetchDuration, undefined);
   assert.strictEqual(descriptor.duration, descriptor.transaction.duration);
   assert.ok(descriptor.duration >= 20);
+  assert.strictEqual(transaction.transaction, descriptor.transaction);
+  const {callback, totalDuration} = transaction.transaction;
+  assert.equal(callback.count, 2);
+  assert.ok(callback.duration >= 0 && callback.duration <= descriptor.duration);
+  assert.ok(totalDuration >= descriptor.duration);
+  if (process.threadCpuUsage) assert.ok(callback.cpuDuration >= 0);
 });
 
 _.forEach([undefined, 5], detectStuck => {
@@ -397,6 +405,7 @@ _.forEach([undefined, 5], detectStuck => {
     assert.equal(updates, 40);
     assert.equal(operation.transaction.tries, 40);
     assert.equal(operation.transaction.outcome, 'commit');
+    assert.equal(operation.transaction.callback.count, 40);
     assert.strictEqual(descriptor.transaction, operation.transaction);
     assert.equal(descriptor.error, undefined);
   });
@@ -431,6 +440,8 @@ test('transactions preserve SDK maxretry errors and callback telemetry', async t
   });
   assert.equal(operation.transaction.tries, 2);
   assert.equal(operation.transaction.outcome, 'error');
+  assert.equal(operation.transaction.callback.count, 2);
+  assert.ok(operation.transaction.totalDuration >= operation.transaction.callback.duration);
   assert.strictEqual(descriptor.error, sdkError);
   assert.strictEqual(descriptor.transaction, operation.transaction);
 });

@@ -100,6 +100,15 @@ export interface TransactionMetadata {
   prefetchDuration?: number;
   /** Firebase transaction duration, excluding prefetch; absent if no transaction was attempted. */
   duration?: number;
+  /** End-to-end elapsed milliseconds, available after the transaction settles. */
+  totalDuration?: number;
+  /** Cumulative measurements of the caller's update function, excluding normalization. */
+  callback?: {
+    count: number;
+    duration: number;
+    /** Main thread CPU milliseconds, when supported by the Node.js runtime. */
+    cpuDuration?: number;
+  };
 }
 
 export interface OperationOptions {
@@ -602,7 +611,8 @@ export default class NodeFire<
     let tries = 0, result: any;
     const startTime = performance.now();
     let transactionStartTime: number | undefined;
-    const metadata: TransactionMetadata = {};
+    const callback: NonNullable<TransactionMetadata['callback']> = {count: 0, duration: 0};
+    const metadata: TransactionMetadata = {callback};
 
     type OperationResult = ReadValue<Root> | null | undefined;
     const op: OperationDescriptor = {ref: this, method: 'transaction', args: [updateFunction]};
@@ -635,7 +645,18 @@ export default class NodeFire<
             // Don't modify errors originating from the update function itself,
             // they are not Firebase errors.
             wrappedReject = reject;
-            result = updateFunction(normalizedValue);
+            const cpuStart = process.threadCpuUsage?.();
+            const callbackStart = performance.now();
+            callback.count++;
+            try {
+              result = updateFunction(normalizedValue);
+            } finally {
+              callback.duration += performance.now() - callbackStart;
+              if (cpuStart) {
+                const {user, system} = process.threadCpuUsage(cpuStart);
+                callback.cpuDuration = (callback.cpuDuration ?? 0) + (user + system) / 1000;
+              }
+            }
             wrappedReject = wrapReject(
               self, 'transaction', [result], reject, options!.debugPermissionDenied);
             return result;
@@ -721,6 +742,8 @@ export default class NodeFire<
           throw error;
         }
       );
+    }).finally(() => {
+      metadata.totalDuration = performance.now() - startTime;
     });
     return _.assign(promise, {transaction: metadata});
   }
