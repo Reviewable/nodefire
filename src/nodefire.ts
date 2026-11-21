@@ -62,9 +62,37 @@ export interface CacheStats {
   misses: number;
   /** `hits / (hits + misses)`, or zero if there have been no attempts. */
   hitRate: number;
+  /** Estimated Firebase view data bytes across the outermost measured pins in each scope. */
+  estimatedViewBytes: number;
+  /** Percentage of estimated view bytes measured since their pin's last value event. */
+  freshSizePct: number | null;
+  /** Pins without a measurement yet, including those covered by an ancestor. */
+  pendingSizeCount: number;
 }
 
-let cache: LRUCache<string, Reference | Query> | null;
+interface CacheEntry {
+  ref: Reference | Query;
+  onValue: (snap: DataSnapshot) => void;
+  active: boolean;
+  revision: number;
+  estimatedBytes?: number;
+  fresh: boolean;
+}
+
+interface RawValueSize {
+  entries: number;
+  containers: number;
+  scalars: number;
+  numbers: number;
+  stringBytes: number;
+}
+
+type MeasurableSnapshot = DataSnapshot & {
+  valWithSize?(): {value: unknown; size: RawValueSize};
+  rawSize?(): RawValueSize;
+};
+
+let cache: LRUCache<string, CacheEntry> | null;
 let cacheHits = 0, cacheMisses = 0;
 const serverTimeOffsets = {}, serverDisconnects = {}, simulators = {};
 const operationInterceptors: Record<OperationInterceptorTrigger, InterceptOperationsCallback[]> = {
@@ -406,8 +434,23 @@ export default class NodeFire<
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       (opts: {cache?: boolean}) => {
-        if (opts.cache === undefined || opts.cache) this.cache();
-        return this.$ref.once('value').then(snap => getNormalValue<Root>(snap));
+        const entry = opts.cache === false ? undefined : this._pin(true);
+        if (!entry || entry.fresh) {
+          return this.$ref.once('value').then(snap => getNormalValue<Root>(snap));
+        }
+        // Capture the revision at delivery. Another event can arrive before the promise resolves.
+        let revision: number | undefined;
+        return this.$ref.once('value', () => {revision = entry.revision;}).then(snap => {
+          if (!entry.active || entry.fresh || !revision || entry.revision !== revision) {
+            return getNormalValue<Root>(snap);
+          }
+          const measured = (snap as MeasurableSnapshot).valWithSize?.();
+          const value = measured ? measured.value : snap.val();
+          entry.estimatedBytes = measured ? estimateViewBytes(measured.size) :
+            estimatePlainViewBytes(value);
+          entry.fresh = true;
+          return getNormalRawValue(value as Root);
+        });
       }
     );
   }
@@ -417,6 +460,10 @@ export default class NodeFire<
    * hit or miss.
    */
   cache(): void {
+    this._pin(false);
+  }
+
+  private _pin(deferFirstMeasurement: boolean): CacheEntry | undefined {
     if (!cache) return;
     if (!this.$ref.isEqual(this.$ref.ref)) return;  // don't cache queries
     const keyPrefix = getCacheKeyPrefix(this);
@@ -436,15 +483,20 @@ export default class NodeFire<
     if (!isHit) {
       cacheMisses++;
     } else if (cachedPath === this.path) {
-      cache.get(key);  // refresh recency without adding another listener
-      return;
+      // Refresh recency without adding another listener.
+      return cache.get(key);
     }
-    // Detach from the exact reference that listened without retaining the caller's scope.
-    const ref = this.$ref;
-    cache.set(key, ref);
-    ref.on('value', noopCallback, () => {
-      if (cache) cache.delete(key);
-    });
+    const entry = createCacheEntry(this.$ref, deferFirstMeasurement);
+    cache.set(key, entry);
+    try {
+      entry.ref.on('value', entry.onValue, () => {
+        if (entry.active) cache!.delete(key);
+      });
+    } catch (error) {
+      if (entry.active) cache.delete(key);
+      throw error;
+    }
+    return entry;
   }
 
   /**
@@ -718,8 +770,14 @@ export default class NodeFire<
           // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
           // data from the server.  Also pull it into the cache to speed future transactions at
           // this ref.
-          self.cache();
-          onceTxn = _.once(txn);
+          const entry = self._pin(true);
+          onceTxn = _.once((snap: DataSnapshot) => {
+            if (entry?.active && entry.revision && !entry.fresh) {
+              entry.estimatedBytes = estimateSnapshotBytes(snap);
+              entry.fresh = true;
+            }
+            txn();
+          });
           self.$ref.on('value', onceTxn, error => {
             fillMetadata('error');
             wrappedRejectNoResult(error);
@@ -888,8 +946,9 @@ export default class NodeFire<
   static setCacheSize(max: number): void {
     if (cache) cache.clear();
     if (max) {
-      cache = new LRUCache({max, dispose(ref) {
-        ref.off('value', noopCallback);
+      cache = new LRUCache({max, dispose(entry) {
+        entry.active = false;
+        entry.ref.off('value', entry.onValue);
       }});
     } else {
       cache = null;
@@ -902,7 +961,7 @@ export default class NodeFire<
    * @deprecated Use `getCacheStats().count` instead.
    */
   static getCacheCount(): number {
-    return NodeFire.getCacheStats().count;
+    return cache?.size ?? 0;
   }
 
   /**
@@ -910,12 +969,33 @@ export default class NodeFire<
    * @return The current cache size and maximum, as well as its hit and miss counts and hit rate.
    */
   static getCacheStats(): CacheStats {
+    let estimatedViewBytes = 0, freshBytes = 0, pendingSizeCount = 0;
+    // lodash does not enumerate the LRU's cache entries.
+    // eslint-disable-next-line lodash/prefer-lodash-method
+    cache?.forEach((entry, key) => {
+      if (entry.estimatedBytes === undefined) {
+        pendingSizeCount++;
+        return;
+      }
+      // Use a measured ancestor's estimate for the entire subtree. A pending ancestor
+      // has no estimate of its own yet, so any measured descendants still contribute.
+      const rootKeyLength = key.lastIndexOf('\0') + 2;
+      while (key.length > rootKeyLength) {
+        key = key.slice(0, Math.max(rootKeyLength, key.lastIndexOf('/')));
+        if (cache!.peek(key)?.estimatedBytes !== undefined) return;
+      }
+      estimatedViewBytes += entry.estimatedBytes;
+      if (entry.fresh) freshBytes += entry.estimatedBytes;
+    });
     return {
-      count: cache ? cache.size : 0,
-      maxSize: cache ? cache.max : 0,
+      count: cache?.size ?? 0,
+      maxSize: cache?.max ?? 0,
       hits: cacheHits,
       misses: cacheMisses,
-      hitRate: (cacheHits || cacheMisses) ? cacheHits / (cacheHits + cacheMisses) : 0
+      hitRate: NodeFire.getCacheHitRate(),
+      estimatedViewBytes,
+      freshSizePct: estimatedViewBytes ? 100 * freshBytes / estimatedViewBytes : null,
+      pendingSizeCount
     };
   }
 
@@ -925,7 +1005,7 @@ export default class NodeFire<
    * @deprecated Use `getCacheStats().hitRate` instead.
    */
   static getCacheHitRate(): number {
-    return NodeFire.getCacheStats().hitRate;
+    return (cacheHits || cacheMisses) ? cacheHits / (cacheHits + cacheMisses) : 0;
   }
 
   /**
@@ -1177,6 +1257,60 @@ function trimCache(ref) {
   cache.forEach((value, key) => {
     if (_.startsWith(key, prefix)) cache!.delete(key);
   });
+}
+
+function createCacheEntry(ref: Reference | Query, deferFirstMeasurement: boolean): CacheEntry {
+  const entry: CacheEntry = {
+    ref, active: true, revision: 0, fresh: false,
+    onValue(snap) {
+      if (!entry.active) return;
+      entry.fresh = false;
+      if (++entry.revision !== 1) return;
+      const measure = () => {
+        if (!entry.active || entry.estimatedBytes !== undefined) return;
+        entry.estimatedBytes = estimateSnapshotBytes(snap);
+        entry.fresh = entry.revision === 1;
+      };
+      if (deferFirstMeasurement) {
+        // Give a read or transaction prefetch for the same value a chance to record its size.
+        setImmediate(measure);
+      } else {
+        measure();
+      }
+    }
+  };
+  return entry;
+}
+
+function estimateSnapshotBytes(snap: MeasurableSnapshot): number {
+  const size = snap.rawSize?.();
+  return size ? estimateViewBytes(size) : estimatePlainViewBytes(snap.val());
+}
+
+function estimateViewBytes(size: RawValueSize): number {
+  // Calibrated against Firebase's LLRB nodes, children maps, scalar nodes and retained strings.
+  return 64 * size.entries + 96 * size.containers + 48 * size.scalars +
+    14.3 * size.numbers + 0.65 * size.stringBytes;
+}
+
+function estimatePlainViewBytes(value: unknown): number {
+  if (value === null) return 0;
+  switch (typeof value) {
+    case 'object': {
+      let childrenBytes = 0;
+      // Skip holes in Firebase's sparse arrays.
+      // eslint-disable-next-line lodash/prefer-lodash-method
+      for (const key of Object.keys(value)) {
+        const bytes = estimatePlainViewBytes(value[key]);
+        if (bytes) childrenBytes += 64 + bytes;
+      }
+      return childrenBytes ? 96 + childrenBytes : 0;
+    }
+    case 'string': return 48 + 0.65 * Math.ceil((16 + value.length) / 8) * 8;
+    case 'number': return 48 + 14.3;
+    case 'boolean': return 48;
+    default: return 0;
+  }
 }
 
 function getNormalValue<T>(snap: DataSnapshot): ReadValue<T> | null {
