@@ -24,7 +24,7 @@ class FakeReference {
     this.events = events;
     this.valueListenerAdds = valueListenerAdds;
     this.connectedCallbacks = connectedCallbacks;
-    this.database = {app: {name: appName}};
+    this.database = {app: {name: appName, options: {}}};
   }
 
   get key() {
@@ -322,6 +322,38 @@ test('default transaction prefetch measures the raw snapshot once', async () => 
   await nextTurn();
   assert.equal(rawMeasures, 1);
   assert.equal(getSizeStats().estimatedSize, 48 + 0.65 * 24);
+});
+
+test('failed size measurements never escape a cache callback', async () => {
+  NodeFire.setCacheSize(10);
+  const reference = new FakeReference();
+  const root = new NodeFire(reference);
+  const error = _.assign(new Error('missing decryption key'), {firecrypt: 'NO_KEY'});
+  const unreadable = {val() {throw error;}};
+  reference.emit('/read', unreadable);
+  reference.emit('/pin', unreadable);
+  root.childRaw('pin').cache();
+  const ref = root.childRaw('read');
+  await assert.rejects(ref.get(), failure => failure === error && failure.firecrypt === 'NO_KEY');
+  await nextTurn();
+  assert.equal(getSizeStats().pendingSizeCount, 2);
+  reference.emit('/read', snapshot(false));
+  assert.equal(await ref.get(), false);
+  assert.equal(getSizeStats().estimatedSize, 48);
+  assert.equal(getSizeStats().pendingSizeCount, 1);
+});
+
+test('a failed size probe does not interrupt transaction prefetch', async () => {
+  NodeFire.setCacheSize(10);
+  const reference = new FakeReference();
+  const ref = new NodeFire(reference).childRaw('value');
+  reference.emit('/value', {
+    val: _.constant(2),
+    rawSize() {throw new Error('measurement unavailable');}
+  });
+  assert.equal(await ref.transaction(value => value + 1), 3);
+  await nextTurn();
+  assert.equal(getSizeStats().pendingSizeCount, 1);
 });
 
 test('a read racing a listener update cannot make its older estimate fresh', async () => {

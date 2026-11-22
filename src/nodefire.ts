@@ -436,7 +436,7 @@ export default class NodeFire<
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       (opts: {cache?: boolean}) => {
-        const entry = opts.cache === false ? undefined : this._pin(true);
+        const entry = opts.cache === false ? undefined : this.cache(true);
         if (!entry || entry.fresh) {
           return this.$ref.once('value').then(snap => getNormalValue<Root>(snap));
         }
@@ -459,13 +459,10 @@ export default class NodeFire<
 
   /**
    * Adds this reference (if it's not a query) to the cache (if maxCacheSize set) and counts a cache
-   * hit or miss.
+   * hit or miss. Reads and transaction prefetch defer the first measurement to reuse their
+   * snapshot when available.
    */
-  cache(): void {
-    this._pin(false);
-  }
-
-  private _pin(deferFirstMeasurement: boolean): CacheEntry | undefined {
+  cache(deferFirstMeasurement = false): CacheEntry | void {
     if (!cache) return;
     if (!this.$ref.isEqual(this.$ref.ref)) return;  // don't cache queries
     const keyPrefix = getCacheKeyPrefix(this);
@@ -772,11 +769,10 @@ export default class NodeFire<
           // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
           // data from the server.  Also pull it into the cache to speed future transactions at
           // this ref.
-          const entry = self._pin(true);
+          const entry = self.cache(true);
           onceTxn = _.once((snap: DataSnapshot) => {
             if (entry?.active && entry.revision && !entry.fresh) {
-              entry.estimatedBytes = estimateSnapshotBytes(snap);
-              entry.fresh = true;
+              measureCacheEntry(entry, snap, entry.revision);
             }
             txn();
           });
@@ -1270,8 +1266,7 @@ function createCacheEntry(ref: Reference | Query, deferFirstMeasurement: boolean
       if (++entry.revision !== 1) return;
       const measure = () => {
         if (!entry.active || entry.estimatedBytes !== undefined) return;
-        entry.estimatedBytes = estimateSnapshotBytes(snap);
-        entry.fresh = entry.revision === 1;
+        measureCacheEntry(entry, snap, 1);
       };
       if (deferFirstMeasurement) {
         // Give a read or transaction prefetch for the same value a chance to record its size.
@@ -1284,9 +1279,14 @@ function createCacheEntry(ref: Reference | Query, deferFirstMeasurement: boolean
   return entry;
 }
 
-function estimateSnapshotBytes(snap: MeasurableSnapshot): number {
-  const size = snap.rawSize?.();
-  return size ? estimateViewBytes(size) : estimatePlainViewBytes(snap.val());
+function measureCacheEntry(entry: CacheEntry, snap: MeasurableSnapshot, revision: number): void {
+  try {
+    const size = snap.rawSize?.();
+    entry.estimatedBytes = size ? estimateViewBytes(size) : estimatePlainViewBytes(snap.val());
+    entry.fresh = entry.revision === revision;
+  } catch {
+    // Older FireCrypt snapshots may need a key even to estimate size. Keep the last estimate.
+  }
 }
 
 function estimateViewBytes(size: RawValueSize): number {
