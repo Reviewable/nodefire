@@ -63,9 +63,11 @@ export interface CacheStats {
   /** `hits / (hits + misses)`, or zero if there have been no attempts. */
   hitRate: number;
   /** Estimated Firebase view data bytes across the outermost measured pins in each scope. */
-  estimatedViewBytes: number;
-  /** Percentage of estimated view bytes measured since their pin's last value event. */
-  freshSizePct: number | null;
+  estimatedSize: number;
+  /** Share of estimated bytes measured since their pin's last value event, in the range 0–1.
+   *  Null when the total estimate is zero.
+   */
+  freshSizeFraction: number | null;
   /** Pins without a measurement yet, including those covered by an ancestor. */
   pendingSizeCount: number;
 }
@@ -75,7 +77,7 @@ interface CacheEntry {
   onValue: (snap: DataSnapshot) => void;
   active: boolean;
   revision: number;
-  estimatedBytes?: number;
+  estimatedBytes: number | undefined;
   fresh: boolean;
 }
 
@@ -969,7 +971,7 @@ export default class NodeFire<
    * @return The current cache size and maximum, as well as its hit and miss counts and hit rate.
    */
   static getCacheStats(): CacheStats {
-    let estimatedViewBytes = 0, freshBytes = 0, pendingSizeCount = 0;
+    let estimatedSize = 0, freshBytes = 0, pendingSizeCount = 0;
     // lodash does not enumerate the LRU's cache entries.
     // eslint-disable-next-line lodash/prefer-lodash-method
     cache?.forEach((entry, key) => {
@@ -984,7 +986,7 @@ export default class NodeFire<
         key = key.slice(0, Math.max(rootKeyLength, key.lastIndexOf('/')));
         if (cache!.peek(key)?.estimatedBytes !== undefined) return;
       }
-      estimatedViewBytes += entry.estimatedBytes;
+      estimatedSize += entry.estimatedBytes;
       if (entry.fresh) freshBytes += entry.estimatedBytes;
     });
     return {
@@ -993,8 +995,8 @@ export default class NodeFire<
       hits: cacheHits,
       misses: cacheMisses,
       hitRate: NodeFire.getCacheHitRate(),
-      estimatedViewBytes,
-      freshSizePct: estimatedViewBytes ? 100 * freshBytes / estimatedViewBytes : null,
+      estimatedSize,
+      freshSizeFraction: estimatedSize ? freshBytes / estimatedSize : null,
       pendingSizeCount
     };
   }
@@ -1261,7 +1263,7 @@ function trimCache(ref) {
 
 function createCacheEntry(ref: Reference | Query, deferFirstMeasurement: boolean): CacheEntry {
   const entry: CacheEntry = {
-    ref, active: true, revision: 0, fresh: false,
+    ref, active: true, revision: 0, estimatedBytes: undefined, fresh: false,
     onValue(snap) {
       if (!entry.active) return;
       entry.fresh = false;

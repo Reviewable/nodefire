@@ -124,8 +124,8 @@ function snapshot(value) {
 }
 
 function getSizeStats() {
-  const {estimatedViewBytes, freshSizePct, pendingSizeCount} = NodeFire.getCacheStats();
-  return {estimatedViewBytes, freshSizePct, pendingSizeCount};
+  const {estimatedSize, freshSizeFraction, pendingSizeCount} = NodeFire.getCacheStats();
+  return {estimatedSize, freshSizeFraction, pendingSizeCount};
 }
 
 afterEach(() => {
@@ -147,8 +147,8 @@ test('counts a cached ancestor as a cache hit', () => {
     hits: 1,
     misses: 1,
     hitRate: 0.5,
-    estimatedViewBytes: 0,
-    freshSizePct: null,
+    estimatedSize: 0,
+    freshSizeFraction: null,
     pendingSizeCount: 2
   });
 
@@ -160,8 +160,8 @@ test('counts a cached ancestor as a cache hit', () => {
     hits: 0,
     misses: 0,
     hitRate: 0,
-    estimatedViewBytes: 0,
-    freshSizePct: null,
+    estimatedSize: 0,
+    freshSizeFraction: null,
     pendingSizeCount: 1
   });
 });
@@ -180,8 +180,8 @@ test('counts the cached root as a cache hit for descendants', () => {
     hits: 1,
     misses: 1,
     hitRate: 0.5,
-    estimatedViewBytes: 0,
-    freshSizePct: null,
+    estimatedSize: 0,
+    freshSizeFraction: null,
     pendingSizeCount: 2
   });
 });
@@ -200,8 +200,8 @@ test('scopes ancestor cache hits to the database instance', () => {
     hits: 0,
     misses: 2,
     hitRate: 0,
-    estimatedViewBytes: 0,
-    freshSizePct: null,
+    estimatedSize: 0,
+    freshSizeFraction: null,
     pendingSizeCount: 2
   });
 });
@@ -219,8 +219,8 @@ test('counts unrelated paths as cache misses', () => {
     hits: 0,
     misses: 2,
     hitRate: 0,
-    estimatedViewBytes: 0,
-    freshSizePct: null,
+    estimatedSize: 0,
+    freshSizeFraction: null,
     pendingSizeCount: 2
   });
 });
@@ -244,8 +244,8 @@ test('keeps deprecated cache methods callable without a receiver', () => {
     hits: 0,
     misses: 0,
     hitRate: 0,
-    estimatedViewBytes: 0,
-    freshSizePct: null,
+    estimatedSize: 0,
+    freshSizeFraction: null,
     pendingSizeCount: 1
   });
 });
@@ -259,30 +259,30 @@ test('counts raw Firebase data and weights freshness by bytes', async () => {
   first.cache();
   second.cache();
   assert.deepEqual(getSizeStats(), {
-    estimatedViewBytes: 0, freshSizePct: null, pendingSizeCount: 2
+    estimatedSize: 0, freshSizeFraction: null, pendingSizeCount: 2
   });
   reference.emit('/first', snapshot(null));
   assert.deepEqual(getSizeStats(), {
-    estimatedViewBytes: 0, freshSizePct: null, pendingSizeCount: 1
+    estimatedSize: 0, freshSizeFraction: null, pendingSizeCount: 1
   });
   reference.emit('/first', snapshot({value: 'ignored until read'}));
   reference.emit('/second', snapshot(false));
   let estimates = getSizeStats();
-  assert.equal(estimates.estimatedViewBytes, 48);
-  assert.equal(estimates.freshSizePct, 100);
+  assert.equal(estimates.estimatedSize, 48);
+  assert.equal(estimates.freshSizeFraction, 1);
 
   const value = [null, false, 0, ''];
   reference.emit('/first', snapshot(value));
   assert.deepEqual(await first.get(), {1: false, 2: 0, 3: ''});
   const expectedBytes = 96 + 3 * (64 + 48) + 14.3 + 0.65 * 16;
   estimates = getSizeStats();
-  assert.ok(Math.abs(estimates.estimatedViewBytes - expectedBytes - 48) < 1e-9);
-  assert.equal(estimates.freshSizePct, 100);
+  assert.ok(Math.abs(estimates.estimatedSize - expectedBytes - 48) < 1e-9);
+  assert.equal(estimates.freshSizeFraction, 1);
 
   reference.emit('/first', {val() {assert.fail('Updates should leave the old size stale');}});
   estimates = getSizeStats();
-  assert.ok(Math.abs(estimates.estimatedViewBytes - expectedBytes - 48) < 1e-9);
-  assert.ok(Math.abs(estimates.freshSizePct - 4800 / (expectedBytes + 48)) < 1e-9);
+  assert.ok(Math.abs(estimates.estimatedSize - expectedBytes - 48) < 1e-9);
+  assert.ok(Math.abs(estimates.freshSizeFraction - 48 / (expectedBytes + 48)) < 1e-9);
 });
 
 test('measures a FireCrypt read once and preserves falsy values', async () => {
@@ -303,7 +303,7 @@ test('measures a FireCrypt read once and preserves falsy values', async () => {
     assert.equal(measured, 1);
   }
   await nextTurn();
-  assert.equal(getSizeStats().estimatedViewBytes, 4 * (48 + 0.65 * 40));
+  assert.equal(getSizeStats().estimatedSize, 4 * (48 + 0.65 * 40));
 });
 
 test('default transaction prefetch measures the raw snapshot once', async () => {
@@ -321,7 +321,7 @@ test('default transaction prefetch measures the raw snapshot once', async () => 
   assert.equal(await ref.transaction(value => value + 1), 3);
   await nextTurn();
   assert.equal(rawMeasures, 1);
-  assert.equal(getSizeStats().estimatedViewBytes, 48 + 0.65 * 24);
+  assert.equal(getSizeStats().estimatedSize, 48 + 0.65 * 24);
 });
 
 test('a read racing a listener update cannot make its older estimate fresh', async () => {
@@ -333,12 +333,12 @@ test('a read racing a listener update cannot make its older estimate fresh', asy
   assert.equal(await ref.get(), '');
   await nextTurn();
   assert.deepEqual(getSizeStats(), {
-    estimatedViewBytes: 48 + 0.65 * 16, freshSizePct: 0, pendingSizeCount: 0
+    estimatedSize: 48 + 0.65 * 16, freshSizeFraction: 0, pendingSizeCount: 0
   });
   delete reference.events.afterOnce;
   assert.equal(await ref.get(), false);
   assert.deepEqual(getSizeStats(), {
-    estimatedViewBytes: 48, freshSizePct: 100, pendingSizeCount: 0
+    estimatedSize: 48, freshSizeFraction: 1, pendingSizeCount: 0
   });
 });
 
@@ -354,18 +354,18 @@ test('only measured ancestors in the same database and access scope cover descen
   reference.emit('/parent/value', snapshot(false));
   otherAccess.emit('/parent/value', snapshot(false));
   assert.deepEqual(getSizeStats(), {
-    estimatedViewBytes: 96, freshSizePct: 100, pendingSizeCount: 1
+    estimatedSize: 96, freshSizeFraction: 1, pendingSizeCount: 1
   });
   reference.emit('/parent', snapshot({value: false}));
   const bytes = 96 + 64 + 48 + 48;
   assert.deepEqual(getSizeStats(), {
-    estimatedViewBytes: bytes, freshSizePct: 100, pendingSizeCount: 0
+    estimatedSize: bytes, freshSizeFraction: 1, pendingSizeCount: 0
   });
   reference.emit('/parent', snapshot({value: true}));
-  assert.equal(getSizeStats().freshSizePct, 4800 / bytes);
+  assert.equal(getSizeStats().freshSizeFraction, 48 / bytes);
   root.childRaw('parent').uncache();
   assert.deepEqual(getSizeStats(), {
-    estimatedViewBytes: 96, freshSizePct: 100, pendingSizeCount: 0
+    estimatedSize: 96, freshSizeFraction: 1, pendingSizeCount: 0
   });
 });
 
@@ -389,7 +389,7 @@ test('eviction, reinsertion, and disconnect ignore old value and cancel callback
   await nextTurn();
   assert.equal(NodeFire.getCacheCount(), 0);
   assert.deepEqual(getSizeStats(), {
-    estimatedViewBytes: 0, freshSizePct: null, pendingSizeCount: 0
+    estimatedSize: 0, freshSizeFraction: null, pendingSizeCount: 0
   });
 });
 
