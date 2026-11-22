@@ -341,6 +341,11 @@ test('failed size measurements never escape a cache callback', async () => {
   assert.equal(await ref.get(), false);
   assert.equal(getSizeStats().estimatedSize, 48);
   assert.equal(getSizeStats().pendingSizeCount, 1);
+  // A standalone pin recovers on a later event without a caller reading it.
+  reference.emit('/pin', snapshot(true));
+  assert.deepEqual(getSizeStats(), {
+    estimatedSize: 96, freshSizeFraction: 1, pendingSizeCount: 0
+  });
 });
 
 test('a failed size probe does not interrupt transaction prefetch', async () => {

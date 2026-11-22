@@ -1263,10 +1263,11 @@ function createCacheEntry(ref: Reference | Query, deferFirstMeasurement: boolean
     onValue(snap) {
       if (!entry.active) return;
       entry.fresh = false;
-      if (++entry.revision !== 1) return;
+      const revision = ++entry.revision;
+      if (entry.estimatedBytes !== undefined) return;
       const measure = () => {
         if (!entry.active || entry.estimatedBytes !== undefined) return;
-        measureCacheEntry(entry, snap, 1);
+        measureCacheEntry(entry, snap, revision);
       };
       if (deferFirstMeasurement) {
         // Give a read or transaction prefetch for the same value a chance to record its size.
