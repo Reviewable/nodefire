@@ -436,7 +436,7 @@ export default class NodeFire<
     return invoke(
       {ref: this, method: 'get', args: []}, options,
       (opts: {cache?: boolean}) => {
-        const entry = opts.cache === false ? undefined : this.cache(true);
+        const entry = opts.cache === false ? undefined : this._pin(true);
         if (!entry || entry.fresh) {
           return this.$ref.once('value').then(snap => getNormalValue<Root>(snap));
         }
@@ -459,10 +459,13 @@ export default class NodeFire<
 
   /**
    * Adds this reference (if it's not a query) to the cache (if maxCacheSize set) and counts a cache
-   * hit or miss. Reads and transaction prefetch defer the first measurement to reuse their
-   * snapshot when available.
+   * hit or miss.
    */
-  cache(deferFirstMeasurement = false): CacheEntry | void {
+  cache(): void {
+    this._pin(false);
+  }
+
+  private _pin(deferFirstMeasurement: boolean): CacheEntry | undefined {
     if (!cache) return;
     if (!this.$ref.isEqual(this.$ref.ref)) return;  // don't cache queries
     const keyPrefix = getCacheKeyPrefix(this);
@@ -769,7 +772,7 @@ export default class NodeFire<
           // (potentially expensive) transaction code 2 or 3 times while waiting for authoritative
           // data from the server.  Also pull it into the cache to speed future transactions at
           // this ref.
-          const entry = self.cache(true);
+          const entry = self._pin(true);
           onceTxn = _.once((snap: DataSnapshot) => {
             if (entry?.active && entry.revision && !entry.fresh) {
               measureCacheEntry(entry, snap, entry.revision);

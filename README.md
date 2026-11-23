@@ -205,8 +205,12 @@ static getCacheCount()
 
 /**
  * Gets the current cache statistics.
- * @return The current cache statistics as `{count, maxSize, hits, misses, hitRate}`.  Hits include
- *     requests covered by a cached ancestor.
+ * @return The current cache statistics as
+ *     `{count, maxSize, hits, misses, hitRate, estimatedSize, freshSizeFraction, pendingSizeCount}`.
+ *     Hits include requests covered by a cached ancestor. `estimatedSize` is in bytes and counts
+ *     overlapping measured pins once. `freshSizeFraction` is the fraction of estimated bytes with
+ *     a fresh measurement, or null when the estimate is zero. `pendingSizeCount` counts pins
+ *     awaiting their first successful measurement.
  */
 static getCacheStats()
 
